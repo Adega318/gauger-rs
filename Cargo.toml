@@ -1,0 +1,10 @@
+[package]
+name = "gauger"
+version = "0.1.0"
+edition = "2024"
+description = "A terminal resource monitor for Docker and Podman"
+license = "MIT"
+keywords = ["tui", "docker", "podman", "monitoring"]
+categories = ["command-line-utilities", "development-tools"]
+
+[dependencies]
