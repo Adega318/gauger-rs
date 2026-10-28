@@ -9,7 +9,9 @@ Gauger aims to provide a lightweight, terminal-based overview of container resou
 - [ ] Live container resource monitoring
   - [ ] Container filtering
   - [ ] Compose support
-- [ ] Docker and Podman support
+- [ ] Engine support
+  - [ ] Docker
+  - [ ] Podman
 - [ ] Interactive terminal interface
 - [ ] Resource usage statistics and history
 
