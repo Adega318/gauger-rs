@@ -4,7 +4,7 @@ use bollard::plugin::{
     ContainerSummary, ContainerSummaryHealthStatusEnum, ContainerSummaryStateEnum, HealthStatusEnum,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Runtime {
     Docker,
     Podman,
@@ -12,18 +12,19 @@ pub enum Runtime {
 
 impl Display for Runtime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
+        f.pad(match self {
             Self::Docker => "docker",
             Self::Podman => "podman",
         })
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Health {
     Starting,
     Healthy,
     Unhealthy,
+    Empty,
     #[default]
     Unknown,
 }
@@ -34,9 +35,8 @@ impl From<Option<ContainerSummaryHealthStatusEnum>> for Health {
             Some(ContainerSummaryHealthStatusEnum::STARTING) => Self::Starting,
             Some(ContainerSummaryHealthStatusEnum::HEALTHY) => Self::Healthy,
             Some(ContainerSummaryHealthStatusEnum::UNHEALTHY) => Self::Unhealthy,
-            Some(ContainerSummaryHealthStatusEnum::NONE)
-            | Some(ContainerSummaryHealthStatusEnum::EMPTY)
-            | None => Self::Unknown,
+            Some(ContainerSummaryHealthStatusEnum::EMPTY) => Self::Empty,
+            Some(ContainerSummaryHealthStatusEnum::NONE) | None => Self::Unknown,
         }
     }
 }
@@ -47,7 +47,8 @@ impl From<Option<HealthStatusEnum>> for Health {
             Some(HealthStatusEnum::STARTING) => Self::Starting,
             Some(HealthStatusEnum::HEALTHY) => Self::Healthy,
             Some(HealthStatusEnum::UNHEALTHY) => Self::Unhealthy,
-            Some(HealthStatusEnum::NONE) | Some(HealthStatusEnum::EMPTY) | None => Self::Unknown,
+            Some(HealthStatusEnum::EMPTY) => Self::Empty,
+            Some(HealthStatusEnum::NONE) | None => Self::Unknown,
         }
     }
 }
@@ -63,7 +64,19 @@ impl From<&str> for Health {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+impl Display for Health {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.pad(match self {
+            Self::Healthy => "healthy",
+            Self::Unhealthy => "unhealthy",
+            Self::Starting => "starting",
+            Self::Empty => "-",
+            Self::Unknown => "unknown",
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum State {
     Running,
     Paused,
@@ -94,6 +107,23 @@ impl From<Option<ContainerSummaryStateEnum>> for State {
             },
             None => Self::Unknown,
         }
+    }
+}
+
+impl Display for State {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.pad(match self {
+            Self::Running => "running",
+            Self::Paused => "paused",
+            Self::Exited => "exited",
+            Self::Created => "created",
+            Self::Restarting => "restarting",
+            Self::Removing => "removing",
+            Self::Dead => "dead",
+            Self::Stopping => "stopping",
+            Self::Empty => "empty",
+            Self::Unknown => "unknown",
+        })
     }
 }
 
@@ -171,6 +201,28 @@ impl From<String> for Action {
     }
 }
 
+impl Display for Action {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unknown(action) => f.pad(&format!("unknown: {action}")),
+            other => f.pad(match other {
+                Self::Create => "create",
+                Self::Start => "start",
+                Self::Stop => "stop",
+                Self::Die => "die",
+                Self::Pause => "pause",
+                Self::Unpause => "unpause",
+                Self::Restart => "restart",
+                Self::Remove => "remove",
+                Self::Rename => "rename",
+                Self::Oom => "oom",
+                Self::Health(_) => "health",
+                Self::Unknown(_) => unreachable!(),
+            }),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContainerEvent {
     pub runtime: Runtime,
@@ -219,6 +271,14 @@ mod tests {
             Action::from("health_status"),
             Action::Health(Health::Unknown)
         );
+    }
+
+    #[test]
+    fn display_impls_honor_padding() {
+        assert_eq!(format!("{:<7}", Runtime::Docker), "docker ");
+        assert_eq!(format!("{:<10}", State::Running), "running   ");
+        assert_eq!(format!("{:<9}", Health::Healthy), "healthy  ");
+        assert_eq!(format!("{:<8}", Action::Start), "start   ");
     }
 
     #[test]

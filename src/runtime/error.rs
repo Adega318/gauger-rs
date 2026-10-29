@@ -4,6 +4,6 @@ use thiserror::Error;
 pub enum RuntimeError {
     #[error("failed to connect to runtime {runtime} with error: {reason}")]
     ConnectionError { runtime: String, reason: String },
-    #[error("request to {runtime} runtine failed with error: {reason}")]
+    #[error("request to {runtime} runtime failed with error: {reason}")]
     RequestError { runtime: String, reason: String },
 }
