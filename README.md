@@ -53,7 +53,7 @@ The flake supports `x86_64-linux`, `aarch64-linux`, `x86_64-darwin`, and `aarch6
 
 ### From source
 
-Requires a Rust toolchain with support for the 2024 edition (Rust 1.85 or newer).
+Requires a Rust toolchain with support for the 2024 edition (Rust 1.88 or newer).
 
 ```bash
 git clone https://github.com/Adega318/gauger-rs.git
