@@ -2,21 +2,21 @@
 name = "gauger"
 version = "0.1.0"
 edition = "2024"
-description = "A terminal resource monitor for Docker and Podman"
+description = "A terminal monitor for Docker and Podman containers"
 license = "MIT"
-keywords = ["tui", "docker", "podman", "monitoring"]
+keywords = ["docker", "podman", "tui", "monitoring", "container"]
 categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
-tokio = { version = "1", features = [
+tokio = { version = "1.54.1", features = [
   "macros",
   "rt-multi-thread",
   "signal",
   "sync",
   "time",
 ] }
-bollard = "0.21"
-thiserror = "2"
-futures-util = "0.3"
-ratatui = "0.30"
-crossterm = { version = "0.29", features = ["event-stream"] }
+bollard = "0.21.1"
+thiserror = "2.0.21"
+futures-util = "0.3.34"
+ratatui = "0.30.2"
+crossterm = { version = "0.29.0", features = ["event-stream"] }
