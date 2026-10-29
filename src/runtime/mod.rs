@@ -1,5 +1,11 @@
+use std::collections::HashMap;
+
 use bollard::Docker;
-use bollard::query_parameters::ListContainersOptionsBuilder;
+use bollard::errors::Error;
+use bollard::plugin::EventMessage;
+use bollard::query_parameters::{EventsOptionsBuilder, ListContainersOptionsBuilder};
+use futures_util::Stream;
+use futures_util::stream::BoxStream;
 
 use crate::model::{Container, ContainerStats, Runtime};
 
@@ -43,5 +49,17 @@ impl RuntimeClient {
     ) -> Result<ContainerStats, RuntimeError> {
         let _ = container_id;
         todo!("Fetch and normalize container stats")
+    }
+
+    pub fn get_event_stream(&self) -> BoxStream<'_, Result<EventMessage, Error>> {
+        let mut filters: HashMap<String, Vec<String>> = HashMap::new();
+        filters.insert("type".into(), vec!["container".into()]);
+        filters.insert(
+            "event".into(),
+            vec!["start".into(), "die".into(), "health_status".into()],
+        );
+
+        let options = EventsOptionsBuilder::default().filters(&filters).build();
+        Box::pin(self.client.events(Some(options)))
     }
 }
