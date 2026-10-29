@@ -1,11 +1,10 @@
-use std::collections::VecDeque;
 use std::fmt::Display;
 
-use bollard::plugin::{ContainerSummary, ContainerSummaryStateEnum};
+use bollard::plugin::{
+    ContainerSummary, ContainerSummaryHealthStatusEnum, ContainerSummaryStateEnum,
+};
 
-const HISTORY_SIZE: usize = 100;
-
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum Runtime {
     Docker,
     Podman,
@@ -13,14 +12,77 @@ pub enum Runtime {
 
 impl Display for Runtime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Runtime::Docker => "docker",
-                Runtime::Podman => "podman",
-            }
-        )
+        f.write_str(match self {
+            Self::Docker => "docker",
+            Self::Podman => "podman",
+        })
+    }
+}
+
+#[derive(Debug, Default)]
+pub enum Health {
+    Starting,
+    Healthy,
+    Unhealthy,
+    #[default]
+    Unknown,
+}
+
+impl From<Option<ContainerSummaryHealthStatusEnum>> for Health {
+    fn from(health: Option<ContainerSummaryHealthStatusEnum>) -> Self {
+        match health {
+            Some(ContainerSummaryHealthStatusEnum::STARTING) => Self::Starting,
+            Some(ContainerSummaryHealthStatusEnum::HEALTHY) => Self::Healthy,
+            Some(ContainerSummaryHealthStatusEnum::UNHEALTHY) => Self::Unhealthy,
+            Some(ContainerSummaryHealthStatusEnum::NONE)
+            | Some(ContainerSummaryHealthStatusEnum::EMPTY)
+            | None => Self::Unknown,
+        }
+    }
+}
+
+impl From<&str> for Health {
+    fn from(status: &str) -> Self {
+        match status {
+            "starting" => Self::Starting,
+            "healthy" => Self::Healthy,
+            "unhealthy" => Self::Unhealthy,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub enum State {
+    Running,
+    Paused,
+    Exited,
+    Created,
+    Restarting,
+    Removing,
+    Dead,
+    Stopping,
+    Empty,
+    #[default]
+    Unknown,
+}
+
+impl From<Option<ContainerSummaryStateEnum>> for State {
+    fn from(option: Option<ContainerSummaryStateEnum>) -> Self {
+        match option {
+            Some(state) => match state {
+                ContainerSummaryStateEnum::CREATED => Self::Created,
+                ContainerSummaryStateEnum::RUNNING => Self::Running,
+                ContainerSummaryStateEnum::PAUSED => Self::Paused,
+                ContainerSummaryStateEnum::RESTARTING => Self::Restarting,
+                ContainerSummaryStateEnum::EXITED => Self::Exited,
+                ContainerSummaryStateEnum::REMOVING => Self::Removing,
+                ContainerSummaryStateEnum::DEAD => Self::Dead,
+                ContainerSummaryStateEnum::STOPPING => Self::Stopping,
+                ContainerSummaryStateEnum::EMPTY => Self::Empty,
+            },
+            None => Self::Unknown,
+        }
     }
 }
 
@@ -29,13 +91,14 @@ pub struct Container {
     pub id: String,
     pub name: String,
     pub image: String,
-    pub state: ContainerState,
     pub runtime: Runtime,
+    pub state: State,
+    pub health: Health,
 }
 
 impl Container {
-    pub fn from_summary(container: ContainerSummary, runtime: &Runtime) -> Self {
-        Container {
+    pub fn from_summary(container: ContainerSummary, runtime: Runtime) -> Self {
+        Self {
             id: container.id.unwrap_or_default(),
             name: container
                 .names
@@ -46,90 +109,36 @@ impl Container {
                 .trim_start_matches('/')
                 .to_owned(),
             image: container.image.unwrap_or_default(),
-            state: ContainerState::from(container.state),
-            runtime: *runtime,
+            runtime,
+            state: State::from(container.state),
+            health: Health::from(container.health.and_then(|health| health.status)),
         }
     }
-}
-
-pub struct ContainerStatsHistory {
-    pub hist: VecDeque<ContainerStats>,
-}
-
-impl ContainerStatsHistory {
-    pub fn new() -> Self {
-        Self {
-            hist: VecDeque::with_capacity(HISTORY_SIZE),
-        }
-    }
-
-    pub fn push(&mut self, stats: ContainerStats) {
-        if self.hist.len() == HISTORY_SIZE {
-            self.hist.pop_front();
-        }
-        self.hist.push_back(stats);
-    }
-
-    pub fn latest(&self) -> Option<&ContainerStats> {
-        self.hist.back()
-    }
-}
-
-impl Default for ContainerStatsHistory {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-pub struct ContainerStats {
-    pub cpu_percent: f64,
-    pub memory_usage: u64,
-    pub memory_limit: Option<u64>,
-    pub network_rx_bytes: u64,
-    pub network_tx_bytes: u64,
-    pub block_read_bytes: u64,
-    pub block_write_bytes: u64,
 }
 
 #[derive(Debug)]
-pub enum ContainerState {
-    Running,
-    Paused,
-    Exited,
-    Created,
-    Restarting,
-    Removing,
-    Dead,
-    Stopping,
-    Empty,
-    Unknown,
+pub enum Action {
+    Start,
+    Die,
+    Health(Health),
+    Unknown(String),
 }
 
-impl From<Option<ContainerSummaryStateEnum>> for ContainerState {
-    fn from(option: Option<ContainerSummaryStateEnum>) -> Self {
-        match option {
-            Some(ContainerSummaryStateEnum::CREATED) => Self::Created,
-            Some(ContainerSummaryStateEnum::RUNNING) => Self::Running,
-            Some(ContainerSummaryStateEnum::PAUSED) => Self::Paused,
-            Some(ContainerSummaryStateEnum::RESTARTING) => Self::Restarting,
-            Some(ContainerSummaryStateEnum::EXITED) => Self::Exited,
-            Some(ContainerSummaryStateEnum::REMOVING) => Self::Removing,
-            Some(ContainerSummaryStateEnum::DEAD) => Self::Dead,
-            Some(ContainerSummaryStateEnum::STOPPING) => Self::Stopping,
-            Some(ContainerSummaryStateEnum::EMPTY) => Self::Empty,
-            None => Self::Unknown,
+impl From<String> for Action {
+    fn from(action: String) -> Self {
+        match action.as_str() {
+            "start" => Self::Start,
+            "die" => Self::Die,
+            action if let Some(status) = action.strip_prefix("health_status: ") => {
+                Self::Health(Health::from(status))
+            }
+            _ => Self::Unknown(action),
         }
     }
 }
 
-impl ContainerState {
-    pub fn from_docker(state: &str) -> Self {
-        match state.to_ascii_lowercase().as_str() {
-            "running" => Self::Running,
-            "paused" => Self::Paused,
-            "exited" | "dead" => Self::Exited,
-            "created" => Self::Created,
-            _ => Self::Unknown,
-        }
-    }
+#[derive(Debug)]
+pub struct ContainerEvent {
+    pub id: String,
+    pub action: Action,
 }

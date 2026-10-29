@@ -4,10 +4,9 @@ use bollard::Docker;
 use bollard::errors::Error;
 use bollard::plugin::EventMessage;
 use bollard::query_parameters::{EventsOptionsBuilder, ListContainersOptionsBuilder};
-use futures_util::Stream;
 use futures_util::stream::BoxStream;
 
-use crate::model::{Container, ContainerStats, Runtime};
+use crate::model::{Action, Container, ContainerEvent, Runtime};
 
 use self::error::RuntimeError;
 
@@ -39,16 +38,8 @@ impl RuntimeClient {
 
         Ok(containers
             .into_iter()
-            .map(|container| Container::from_summary(container, &self.runtime))
+            .map(|container| Container::from_summary(container, self.runtime))
             .collect())
-    }
-
-    pub async fn container_stats(
-        &self,
-        container_id: &str,
-    ) -> Result<ContainerStats, RuntimeError> {
-        let _ = container_id;
-        todo!("Fetch and normalize container stats")
     }
 
     pub fn get_event_stream(&self) -> BoxStream<'_, Result<EventMessage, Error>> {
@@ -61,5 +52,15 @@ impl RuntimeClient {
 
         let options = EventsOptionsBuilder::default().filters(&filters).build();
         Box::pin(self.client.events(Some(options)))
+    }
+
+    pub fn handle_container_event(event: EventMessage) -> ContainerEvent {
+        let action = event.action.unwrap_or_default();
+        let id = event.actor.unwrap_or_default().id.unwrap_or_default();
+
+        ContainerEvent {
+            id,
+            action: Action::from(action),
+        }
     }
 }
