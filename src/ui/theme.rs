@@ -42,7 +42,7 @@ pub fn error() -> Style {
 
 pub fn selection() -> Style {
     Style::default()
-        .bg(Color::DarkGray)
+        .bg(Color::Indexed(237))
         .add_modifier(Modifier::BOLD)
 }
 
