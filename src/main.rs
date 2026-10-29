@@ -1,31 +1,60 @@
 use std::error::Error;
+use std::io;
 
-use futures_util::StreamExt;
-
+use self::collector::{Collector, CollectorEvent};
 use self::runtime::RuntimeClient;
 use self::runtime::docker::DockerRuntime;
+use self::runtime::podman::PodmanRuntime;
 
+mod collector;
 mod model;
 mod runtime;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let runtime = DockerRuntime::connect()?;
+    let mut clients: Vec<RuntimeClient> = Vec::new();
 
-    let containers = runtime.list_containers().await?;
-
-    for container in containers {
-        println!("{container:?}");
+    match DockerRuntime::connect() {
+        Ok(client) => clients.push(client),
+        Err(err) => eprintln!("docker unavailable: {err}"),
     }
 
-    let mut events = runtime.get_event_stream();
+    match PodmanRuntime::connect() {
+        Ok(client) => clients.push(client),
+        Err(err) => eprintln!("podman unavailable: {err}"),
+    }
 
-    while let Some(result) = events.next().await {
-        match result {
-            Ok(ev) => eprintln!("{:?}", RuntimeClient::handle_container_event(ev)),
-            Err(e) => {
-                eprintln!("stream error: {e}");
-                break;
+    if clients.is_empty() {
+        return Err(
+            io::Error::new(io::ErrorKind::NotFound, "no container runtime available").into(),
+        );
+    }
+
+    let mut collector = Collector::new(clients).spawn();
+
+    while let Some(event) = collector.recv().await {
+        match event {
+            CollectorEvent::Snapshot {
+                runtime,
+                containers,
+            } => {
+                println!("{runtime}: {} containers", containers.len());
+                for container in containers {
+                    println!(
+                        "  {} [{}] {} {} {:?} {:?}",
+                        container.name,
+                        container.id,
+                        container.image,
+                        container.runtime,
+                        container.state,
+                        container.health
+                    );
+                }
+            }
+            CollectorEvent::Container(event) => println!("{event:?}"),
+            CollectorEvent::RuntimeUp { runtime } => println!("{runtime}: connected"),
+            CollectorEvent::RuntimeDown { runtime, reason } => {
+                eprintln!("{runtime}: disconnected: {reason}");
             }
         }
     }
