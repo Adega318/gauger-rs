@@ -48,6 +48,7 @@
         default = pkgs.mkShell {
           inputsFrom = [ self.packages.${pkgs.stdenv.hostPlatform.system}.default ];
           packages = with pkgs; [
+            rustc
             clippy
             rustfmt
             rust-analyzer

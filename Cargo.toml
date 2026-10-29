@@ -2,7 +2,7 @@
 name = "gauger"
 version = "0.1.1"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.99"
 description = "A terminal resource monitor for Docker and Podman"
 license = "MIT"
 repository = "https://github.com/Adega318/gauger-rs"
