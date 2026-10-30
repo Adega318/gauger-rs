@@ -51,6 +51,18 @@ nix build
 
 The flake supports `x86_64-linux`, `aarch64-linux`, `x86_64-darwin`, and `aarch64-darwin`.
 
+The Nix flake does not provide Windows builds. On Windows, build and install from source instead:
+
+```bash
+cargo build --release
+```
+
+The executable will be available at `target/release/gauger.exe`. To install it into your Cargo bin directory:
+
+```bash
+cargo install --path .
+```
+
 ### From source
 
 Requires a Rust toolchain with support for the 2024 edition (Rust 1.99 or newer).
@@ -97,6 +109,11 @@ The Podman API socket must be running. For a rootless setup, enable it with:
 ```bash
 systemctl --user enable --now podman.socket
 ```
+
+#### Windows
+
+- **Docker Desktop** exposes its API over the named pipe `\\.\pipe\docker_engine`. Gauger connects to it automatically via `DOCKER_HOST` defaults; no configuration is needed.
+- **Podman for Windows** exposes its API over `\\.\pipe\podman`. Gauger tries that pipe by default. You can also point Gauger at a different pipe with `CONTAINER_HOST=npipe://\\.\pipe\podman`.
 
 ### Filtering
 
