@@ -157,6 +157,16 @@ impl Container {
     }
 }
 
+impl Display for Container {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} ({}) [{}] - {} ({})",
+            self.name, self.id, self.runtime, self.state, self.health,
+        )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     Create,
@@ -229,6 +239,19 @@ pub struct ContainerEvent {
     pub id: String,
     pub name: Option<String>,
     pub action: Action,
+}
+
+impl Display for ContainerEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}: {} ({}) - {}",
+            self.runtime,
+            self.name.as_deref().unwrap_or(&self.id),
+            self.id,
+            self.action,
+        )
+    }
 }
 
 #[cfg(test)]
