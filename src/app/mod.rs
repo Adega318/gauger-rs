@@ -27,7 +27,7 @@ pub const NOTICE_TTL: Duration = Duration::from_secs(4);
 pub enum RuntimeStatus {
     Connecting,
     Up,
-    Down { reason: String },
+    Down,
     Unavailable { reason: String },
 }
 
@@ -124,10 +124,6 @@ impl App {
         };
         app.rebuild_view();
 
-        if let Some(warning) = app.unavailable_warning() {
-            app.set_notice(warning, false);
-        }
-
         app
     }
 
@@ -165,14 +161,8 @@ impl App {
                     state.last_snapshot = Some(Instant::now());
                 }
             }
-            CollectorEvent::RuntimeDown { runtime, reason } => {
-                self.set_status(
-                    runtime,
-                    RuntimeStatus::Down {
-                        reason: reason.clone(),
-                    },
-                );
-                self.set_notice(format!("{runtime} disconnected: {reason}"), true);
+            CollectorEvent::RuntimeDown { runtime, reason: _ } => {
+                self.set_status(runtime, RuntimeStatus::Down);
             }
         }
     }
@@ -442,28 +432,6 @@ impl App {
         self.set_notice("terminal input stream ended", true);
     }
 
-    pub fn runtime_warning(&self) -> Option<String> {
-        self.runtimes
-            .iter()
-            .find_map(|(runtime, state)| match &state.status {
-                RuntimeStatus::Down { reason } => Some(format!("{runtime} disconnected: {reason}")),
-                RuntimeStatus::Connecting
-                | RuntimeStatus::Up
-                | RuntimeStatus::Unavailable { .. } => None,
-            })
-    }
-
-    fn unavailable_warning(&self) -> Option<String> {
-        self.runtimes
-            .iter()
-            .find_map(|(runtime, state)| match &state.status {
-                RuntimeStatus::Unavailable { reason } => {
-                    Some(format!("{runtime} unavailable: {reason}"))
-                }
-                RuntimeStatus::Connecting | RuntimeStatus::Up | RuntimeStatus::Down { .. } => None,
-            })
-    }
-
     fn display_name(&self, key: &ContainerKey) -> String {
         self.containers
             .get(key)
@@ -717,9 +685,8 @@ mod tests {
         assert_eq!(app.containers.len(), 1);
         assert!(matches!(
             app.runtimes.get(&Runtime::Docker).unwrap().status,
-            RuntimeStatus::Down { .. }
+            RuntimeStatus::Down
         ));
-        assert!(app.notice.is_some());
     }
 
     #[test]
@@ -801,23 +768,6 @@ mod tests {
         });
 
         assert_eq!(app.mode, Mode::Normal);
-    }
-
-    #[test]
-    fn new_surfaces_unavailable_runtimes_as_a_notice() {
-        let app = App::new(BTreeMap::from([
-            (Runtime::Docker, RuntimeState::connecting()),
-            (
-                Runtime::Podman,
-                RuntimeState::unavailable("no socket found"),
-            ),
-        ]));
-
-        assert!(
-            app.notice
-                .as_ref()
-                .is_some_and(|notice| notice.message.contains("podman unavailable"))
-        );
     }
 
     #[test]

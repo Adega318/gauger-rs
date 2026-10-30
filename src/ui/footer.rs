@@ -21,8 +21,6 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             theme::accent()
         };
         Line::from(Span::styled(format!(" {}", notice.message), style))
-    } else if let Some(warning) = app.runtime_warning() {
-        Line::from(Span::styled(format!(" {warning}"), theme::muted()))
     } else {
         Line::from(vec![
             Span::styled(" q ", theme::key()),
