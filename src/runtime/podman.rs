@@ -1,4 +1,6 @@
 use std::env;
+
+#[cfg(unix)]
 use std::path::Path;
 
 use bollard::Docker;
