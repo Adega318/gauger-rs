@@ -59,7 +59,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
             let stale = app.runtimes.get(&container.runtime).is_some_and(|state| {
                 matches!(
                     &state.status,
-                    RuntimeStatus::Down { .. } | RuntimeStatus::Unavailable { .. }
+                    RuntimeStatus::Down | RuntimeStatus::Unavailable { .. }
                 )
             });
             Some(container_row(container, show_id, show_image, stale))

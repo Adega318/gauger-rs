@@ -39,7 +39,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App, key: &ContainerKey) {
     if let Some(state) = app.runtimes.get(&container.runtime)
         && matches!(
             &state.status,
-            RuntimeStatus::Down { .. } | RuntimeStatus::Unavailable { .. }
+            RuntimeStatus::Down | RuntimeStatus::Unavailable { .. }
         )
     {
         lines.push(Line::from(Span::styled(

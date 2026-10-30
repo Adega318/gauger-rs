@@ -50,7 +50,7 @@ fn badge(runtime: Runtime, state: &RuntimeState, now: Instant) -> Span<'static> 
                 .unwrap_or_else(|| "now".to_owned());
             Span::styled(format!("● {runtime} {age}"), theme::ok())
         }
-        RuntimeStatus::Down { .. } => Span::styled(format!("✕ {runtime} down"), theme::error()),
+        RuntimeStatus::Down => Span::styled(format!("✕ {runtime} down"), theme::error()),
         RuntimeStatus::Unavailable { .. } => {
             Span::styled(format!("✕ {runtime} unavailable"), theme::muted())
         }
