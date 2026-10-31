@@ -14,6 +14,7 @@ pub enum RuntimeStatus {
     Unavailable,
 }
 
+#[derive(Debug)]
 pub struct App {
     runtimes: HashMap<Runtime, RuntimeStatus>,
     containers: HashMap<Runtime, HashMap<String, Container>>,
@@ -49,7 +50,20 @@ impl App {
 
                 match container_event.action {
                     Action::Create => {
-                        todo!("set refresh to get the snapshot");
+                        let container = Container {
+                            id: container_event.id.clone(),
+                            name: container_event.name.clone().unwrap_or_default(),
+                            image: String::new(),
+                            runtime: *runtime,
+                            state: State::Created,
+                            health: Health::Unknown,
+                        };
+
+                        self.containers
+                            .entry(*runtime)
+                            .or_default()
+                            .entry(container.id.clone())
+                            .or_insert(container);
                     }
                     Action::Start => {
                         self.set_state(runtime, container_id, State::Running)?;
@@ -241,6 +255,38 @@ mod tests {
 
         assert!(app.containers[&Runtime::Docker].contains_key("docker-1"));
         assert!(app.containers[&Runtime::Podman].contains_key("podman-1"));
+    }
+
+    #[test]
+    fn create_inserts_placeholder_container() {
+        let mut app = App::new(vec![Runtime::Docker]);
+
+        app.apply_event(CollectorEvent::Container(ContainerEvent {
+            runtime: Runtime::Docker,
+            id: "c1".to_owned(),
+            name: Some("name-c1".to_owned()),
+            action: Action::Create,
+        }))
+        .unwrap();
+
+        assert_container(&app, Runtime::Docker, "c1", State::Created, Health::Unknown);
+        assert_eq!(app.containers[&Runtime::Docker]["c1"].name, "name-c1");
+    }
+
+    #[test]
+    fn create_keeps_existing_container() {
+        let mut app = app_with(Runtime::Docker, vec![container(Runtime::Docker, "c1")]);
+
+        app.apply_event(CollectorEvent::Container(ContainerEvent {
+            runtime: Runtime::Docker,
+            id: "c1".to_owned(),
+            name: Some("replacement".to_owned()),
+            action: Action::Create,
+        }))
+        .unwrap();
+
+        assert_container(&app, Runtime::Docker, "c1", State::Exited, Health::Healthy);
+        assert_eq!(app.containers[&Runtime::Docker]["c1"].name, "name-c1");
     }
 
     #[test]

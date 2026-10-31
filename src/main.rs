@@ -1,3 +1,4 @@
+use self::app::App;
 use self::cli::Cli;
 use self::collector::{Collector, CollectorEvent};
 use self::error::GaugerError;
@@ -41,11 +42,13 @@ async fn run_tui() -> Result<(), GaugerError> {
 }
 async fn run_headless() -> Result<(), GaugerError> {
     let clients = connect_runtimes()?;
+    let runtimes = clients.iter().map(RuntimeClient::runtime).collect();
+    let mut app = App::new(runtimes);
 
     let mut collector = Collector::new(clients).spawn();
 
     while let Some(event) = collector.recv().await {
-        match event {
+        match &event {
             CollectorEvent::Snapshot {
                 runtime,
                 containers,
@@ -59,7 +62,7 @@ async fn run_headless() -> Result<(), GaugerError> {
                     }
                 );
 
-                for container in &containers {
+                for container in containers {
                     println!("  {container}");
                 }
             }
@@ -72,6 +75,10 @@ async fn run_headless() -> Result<(), GaugerError> {
             CollectorEvent::RuntimeDown { runtime, reason } => {
                 println!("down: {}, {}", runtime, reason)
             }
+        }
+
+        if let Err(err) = app.apply_event(event) {
+            eprintln!("gauger: {err}");
         }
     }
 
