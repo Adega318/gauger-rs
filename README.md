@@ -102,7 +102,9 @@ Gauger starts the interactive interface and connects to every engine it can find
   1. `CONTAINER_HOST` (must be a `unix://` address)
   2. `$XDG_RUNTIME_DIR/podman/podman.sock`
   3. `/run/user/<uid>/podman/podman.sock`
-  4. `/run/podman/podman.sock`
+  4. `/run/podman/podman.sock` (only when running as root)
+
+A non-root process never falls back to the system socket, because that can point at a different Podman instance with different containers. To use it explicitly, set `CONTAINER_HOST=unix:///run/podman/podman.sock`.
 
 The Podman API socket must be running. For a rootless setup, enable it with:
 
