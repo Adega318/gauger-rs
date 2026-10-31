@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt::Display;
 
 use bollard::plugin::{
@@ -157,6 +158,16 @@ impl Container {
     }
 }
 
+impl Display for Container {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} ({}) [{}] - {} ({})",
+            self.name, self.id, self.runtime, self.state, self.health,
+        )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     Create,
@@ -204,21 +215,18 @@ impl From<String> for Action {
 impl Display for Action {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Unknown(action) => f.pad(&format!("unknown: {action}")),
-            other => f.pad(match other {
-                Self::Create => "create",
-                Self::Start => "start",
-                Self::Stop => "stop",
-                Self::Die => "die",
-                Self::Pause => "pause",
-                Self::Unpause => "unpause",
-                Self::Restart => "restart",
-                Self::Remove => "remove",
-                Self::Rename => "rename",
-                Self::Oom => "oom",
-                Self::Health(_) => "health",
-                Self::Unknown(_) => unreachable!(),
-            }),
+            Self::Unknown(action) => write!(f, "unknown: {action}"),
+            Self::Health(health) => write!(f, "health({health})"),
+            Self::Create => f.write_str("create"),
+            Self::Start => f.write_str("start"),
+            Self::Stop => f.write_str("stop"),
+            Self::Die => f.write_str("die"),
+            Self::Pause => f.write_str("pause"),
+            Self::Unpause => f.write_str("unpause"),
+            Self::Restart => f.write_str("restart"),
+            Self::Remove => f.write_str("remove"),
+            Self::Rename => f.write_str("rename"),
+            Self::Oom => f.write_str("oom"),
         }
     }
 }
@@ -229,6 +237,19 @@ pub struct ContainerEvent {
     pub id: String,
     pub name: Option<String>,
     pub action: Action,
+}
+
+impl Display for ContainerEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}: {} ({}) - {}",
+            self.runtime,
+            self.name.as_deref().unwrap_or(&self.id),
+            self.id,
+            self.action,
+        )
+    }
 }
 
 #[cfg(test)]

@@ -41,31 +41,45 @@ fn socket_path() -> Result<String, String> {
         return Ok(path.to_string());
     }
 
+    use std::os::unix::fs::MetadataExt;
+
+    let uid = std::fs::metadata("/proc/self")
+        .ok()
+        .map(|metadata| metadata.uid());
+
+    let mut rootless = Vec::new();
     if let Ok(runtime_dir) = env::var("XDG_RUNTIME_DIR") {
-        let path = format!("{runtime_dir}/podman/podman.sock");
-        if Path::new(&path).exists() {
-            return Ok(path);
-        }
+        rootless.push(format!("{runtime_dir}/podman/podman.sock"));
+    }
+    if let Some(uid) = uid {
+        rootless.push(format!("/run/user/{uid}/podman/podman.sock"));
     }
 
-    if let Ok(metadata) = std::fs::metadata("/proc/self") {
-        use std::os::unix::fs::MetadataExt;
-
-        let path = format!("/run/user/{}/podman/podman.sock", metadata.uid());
-        if Path::new(&path).exists() {
-            return Ok(path);
-        }
-    }
-
-    let system_socket = "/run/podman/podman.sock";
-    if Path::new(system_socket).exists() {
-        return Ok(system_socket.to_string());
-    }
-
-    Err(
-        "no Podman socket found (checked CONTAINER_HOST, XDG runtime socket, /run/user/$UID, and /run/podman)"
-            .to_string(),
+    select_socket(
+        rootless,
+        "/run/podman/podman.sock".to_string(),
+        uid.unwrap_or(u32::MAX),
+        |path| Path::new(path).exists(),
     )
+    .ok_or_else(|| {
+        "no Podman socket found (checked CONTAINER_HOST, XDG runtime socket, and /run/user/$UID); \
+         start a rootless socket with `systemctl --user enable --now podman.socket` or set CONTAINER_HOST"
+            .to_string()
+    })
+}
+
+#[cfg(unix)]
+fn select_socket(
+    rootless: impl IntoIterator<Item = String>,
+    system: String,
+    uid: u32,
+    exists: impl Fn(&str) -> bool,
+) -> Option<String> {
+    if let Some(path) = rootless.into_iter().find(|path| exists(path)) {
+        return Some(path);
+    }
+
+    (uid == 0 && exists(&system)).then_some(system)
 }
 
 /// Discover the Podman named pipe on Windows.
@@ -93,4 +107,47 @@ fn connect_podman(path: &str) -> Result<Docker, bollard::errors::Error> {
 #[cfg(windows)]
 fn connect_podman(path: &str) -> Result<Docker, bollard::errors::Error> {
     Docker::connect_with_named_pipe(path, 120, bollard::API_DEFAULT_VERSION)
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prefers_first_existing_rootless_socket() {
+        let rootless = vec![
+            "/run/user/1000/podman/podman.sock".to_string(),
+            "/tmp/podman.sock".to_string(),
+        ];
+
+        let socket = select_socket(
+            rootless,
+            "/run/podman/podman.sock".to_string(),
+            1000,
+            |path| path == "/tmp/podman.sock",
+        );
+
+        assert_eq!(socket.as_deref(), Some("/tmp/podman.sock"));
+    }
+
+    #[test]
+    fn non_root_does_not_fall_back_to_system_socket() {
+        let socket = select_socket(
+            Vec::new(),
+            "/run/podman/podman.sock".to_string(),
+            1000,
+            |_| true,
+        );
+
+        assert_eq!(socket, None);
+    }
+
+    #[test]
+    fn root_falls_back_to_system_socket() {
+        let socket = select_socket(Vec::new(), "/run/podman/podman.sock".to_string(), 0, |_| {
+            true
+        });
+
+        assert_eq!(socket.as_deref(), Some("/run/podman/podman.sock"));
+    }
 }
