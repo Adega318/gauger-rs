@@ -124,7 +124,7 @@ gauger --no-tui
 
 ```text
 Snapshot of docker:
-  05ae208348f4 postgres (docker) [running] (healthy)
+  postgres (05ae208348f4) (docker) [running] (healthy)
 up: docker
 down: docker, connection refused
 ```
@@ -143,11 +143,11 @@ Each engine snapshot is listed under a `Snapshot of <runtime>:` heading, followe
 
 ### Exit codes
 
-| Code | Meaning                                                       |
-| ---- | ------------------------------------------------------------- |
-| `0`  | Normal exit                                                   |
-| `1`  | Runtime error |
-| `2`  | Invalid command-line arguments                                |
+| Code | Meaning                        |
+| ---- | ------------------------------ |
+| `0`  | Normal exit                    |
+| `1`  | Runtime error                  |
+| `2`  | Invalid command-line arguments |
 
 ## Development
 
