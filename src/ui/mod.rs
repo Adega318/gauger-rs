@@ -19,6 +19,7 @@ use crate::{TICK_RATE, connect_runtimes};
 use self::view::render;
 
 mod view;
+mod style;
 
 pub(crate) async fn run_tui() -> Result<(), GaugerError> {
     let clients = connect_runtimes()?;

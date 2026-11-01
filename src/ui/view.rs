@@ -1,97 +1,127 @@
-use ratatui::layout::{Constraint, Direction, Layout};
-use ratatui::style::{Color, Style};
-use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState};
+use ratatui::{
+    Frame,
+    layout::{Constraint, Layout, Rect},
+    text::{Line, Span},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState},
+};
 
 use crate::app::App;
-use crate::model::{Health, State};
 
-pub(crate) fn render(f: &mut ratatui::Frame, app: &App) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Min(0),
-            Constraint::Length(3),
-        ])
-        .split(f.area());
+use super::style;
 
-    // Header line 1: app title + counts
-    let up_count = app.runtimes_up_count();
-    let header_text = format!(
-        "gauger {} - {} container{} across {} runtime{}",
-        env!("CARGO_PKG_VERSION"),
-        app.visible_len(),
-        if app.visible_len() == 1 { "" } else { "s" },
-        up_count,
-        if up_count == 1 { "" } else { "s" },
-    );
-    let header = Paragraph::new(header_text);
-    f.render_widget(header, chunks[0]);
+const MAX_CONTENT_WIDTH: u16 = 110;
 
-    // Body: table of containers with colored State and Health cells
-    let header_cells = ["Runtime", "Name", "ID", "State", "Health"];
-    let rows: Vec<Row> = app
+pub(crate) fn render(frame: &mut Frame, app: &App) {
+    let area = frame.area();
+
+    let [header_area, body_area, footer_area] = Layout::vertical([
+        Constraint::Length(2),
+        Constraint::Min(3),
+        Constraint::Length(2),
+    ])
+    .areas(area);
+
+    let header_area = centered_area(header_area);
+    let body_area = centered_area(body_area);
+    let footer_area = centered_area(footer_area);
+
+    render_header(frame, header_area, app);
+    render_table(frame, body_area, app);
+    render_footer(frame, footer_area);
+}
+
+fn centered_area(area: Rect) -> Rect {
+    let width = area.width.min(MAX_CONTENT_WIDTH);
+
+    Rect {
+        x: area.x + (area.width - width) / 2,
+        width,
+        ..area
+    }
+}
+
+fn render_header(frame: &mut Frame, area: Rect, app: &App) {
+    let containers = app.visible_len();
+    let runtimes = app.runtimes_up_count();
+
+    let line = Line::from(vec![
+        Span::styled("gauger", style::title()),
+        Span::styled(format!(" v{}", env!("CARGO_PKG_VERSION")), style::muted()),
+        Span::styled("  │  ", style::muted()),
+        Span::styled(containers.to_string(), style::highlight()),
+        Span::raw(format!(
+            " container{}",
+            if containers == 1 { "" } else { "s" }
+        )),
+        Span::styled("  │  ", style::muted()),
+        Span::styled(runtimes.to_string(), style::success()),
+        Span::raw(format!(" runtime{}", if runtimes == 1 { "" } else { "s" })),
+    ]);
+
+    frame.render_widget(Paragraph::new(line), area);
+}
+
+fn render_table(frame: &mut Frame, area: Rect, app: &App) {
+    let rows = app
         .container_rows()
         .into_iter()
         .map(|(runtime, container)| {
-            Row::new(vec![
-                Cell::from(runtime.to_string()),
-                Cell::from(container.name.clone()),
-                Cell::from(container.id.clone()),
-                Cell::from(container.state.to_string()).style(state_style(container.state)),
-                Cell::from(container.health.to_string()).style(health_style(container.health)),
+            Row::new([
+                Cell::from(runtime.to_string()).style(style::runtime(runtime)),
+                Cell::from(container.name.clone()).style(style::bold()),
+                Cell::from(container.id.clone()).style(style::muted()),
+                Cell::from(container.state.to_string()).style(style::state(container.state)),
+                Cell::from(container.health.to_string()).style(style::health(container.health)),
             ])
-        })
-        .collect();
+        });
 
     let widths = [
-        Constraint::Length(10),
-        Constraint::Min(22),
-        Constraint::Min(12),
-        Constraint::Length(10),
-        Constraint::Length(10),
+        Constraint::Length(10), // Runtime
+        Constraint::Min(20),    // Name
+        Constraint::Length(12), // ID
+        Constraint::Length(10), // State
+        Constraint::Length(10), // Health
     ];
 
     let table = Table::new(rows, widths)
         .header(
-            Row::new(header_cells)
-                .style(Style::default().bold())
+            Row::new(["RUNTIME", "NAME", "ID", "STATE", "HEALTH"])
+                .style(style::header())
                 .bottom_margin(1),
         )
-        .row_highlight_style(Style::default().reversed())
-        .highlight_symbol(">> ");
+        .column_spacing(2)
+        .row_highlight_style(style::selected())
+        .highlight_symbol(Span::styled("› ", style::highlight()));
 
-    let mut table_state = TableState::default();
-    let selected = if app.visible_len() == 0 {
-        None
-    } else {
-        Some(app.selected.min(app.visible_len() - 1))
-    };
-    table_state.select(selected);
-    f.render_stateful_widget(table, chunks[2], &mut table_state);
+    let mut state = TableState::default();
+    state.select(
+        (app.visible_len() > 0).then_some(app.selected.min(app.visible_len().saturating_sub(1))),
+    );
 
-    // Footer
-    let footer = Paragraph::new("q: quit  r: refresh  g/G: jump  j/k: navigate  Ctrl+u/d: page")
-        .block(Block::default().borders(Borders::ALL));
-    f.render_widget(footer, chunks[3]);
+    frame.render_stateful_widget(table, area, &mut state);
 }
 
-fn state_style(state: State) -> Style {
-    match state {
-        State::Running => Style::default().fg(Color::Green),
-        State::Exited | State::Dead => Style::default().fg(Color::Red),
-        State::Paused | State::Stopping | State::Removing => Style::default().fg(Color::Yellow),
-        State::Created | State::Restarting => Style::default().fg(Color::Cyan),
-        State::Empty | State::Unknown => Style::default().fg(Color::Gray),
-    }
-}
+fn render_footer(frame: &mut Frame, area: Rect) {
+    let shortcuts = [
+        ("q", "quit"),
+        ("r", "refresh"),
+        ("g/G", "jump"),
+        ("j/k", "navigate"),
+        ("Ctrl+u/d", "page"),
+    ];
 
-fn health_style(health: Health) -> Style {
-    match health {
-        Health::Healthy => Style::default().fg(Color::Green),
-        Health::Unhealthy => Style::default().fg(Color::Red),
-        Health::Starting => Style::default().fg(Color::Yellow),
-        Health::Empty | Health::Unknown => Style::default().fg(Color::Gray),
-    }
+    let spans = shortcuts.into_iter().flat_map(|(key, description)| {
+        [
+            Span::styled(format!(" {key} "), style::shortcut()),
+            Span::styled(format!("{description}  "), style::muted()),
+        ]
+    });
+
+    let footer = Paragraph::new(Line::from_iter(spans)).block(
+        Block::default()
+            .borders(Borders::TOP)
+            .border_style(style::border()),
+    );
+
+    frame.render_widget(footer, area);
 }
