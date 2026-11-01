@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Instant;
 
 use crate::collector::CollectorEvent;
 use crate::model::{Action, Container, Health, Runtime, State};
@@ -6,6 +7,7 @@ use crate::model::{Action, Container, Health, Runtime, State};
 use self::error::AppError;
 
 pub mod error;
+pub mod input;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeStatus {
@@ -15,9 +17,20 @@ pub enum RuntimeStatus {
 }
 
 #[derive(Debug)]
+pub enum Effect {
+    Refresh,
+}
+
+#[derive(Debug)]
 pub struct App {
     runtimes: HashMap<Runtime, RuntimeStatus>,
     containers: HashMap<Runtime, HashMap<String, Container>>,
+    visible: Vec<(Runtime, String)>,
+    pub selected: usize,
+    effects: Vec<Effect>,
+    scheduled_sync: bool,
+    last_sync: HashMap<Runtime, Instant>,
+    pub should_quit: bool,
 }
 
 impl App {
@@ -28,6 +41,19 @@ impl App {
                 .map(|runtime| (runtime, RuntimeStatus::Down))
                 .collect(),
             containers: HashMap::new(),
+            visible: Vec::new(),
+            selected: 0,
+            effects: Vec::new(),
+            scheduled_sync: false,
+            last_sync: HashMap::new(),
+            should_quit: false,
+        }
+    }
+
+    pub fn tick(&mut self) {
+        if self.scheduled_sync {
+            self.effects.push(Effect::Refresh);
+            self.scheduled_sync = false;
         }
     }
 
@@ -37,12 +63,15 @@ impl App {
                 runtime,
                 containers,
             } => {
+                self.last_sync.insert(runtime, Instant::now());
+
                 let containers = containers
                     .into_iter()
                     .map(|container| (container.id.clone(), container))
                     .collect();
 
                 self.containers.insert(runtime, containers);
+                self.rebuild_visible();
             }
             CollectorEvent::Container(container_event) => {
                 let runtime = &container_event.runtime;
@@ -89,6 +118,7 @@ impl App {
                     Action::Remove => {
                         self.set_state(runtime, container_id, State::Removing)?;
                         self.set_health(runtime, container_id, Health::Empty)?;
+                        self.scheduled_sync = true;
                     }
                     Action::Rename => {
                         if let Some(name) = &container_event.name
@@ -155,6 +185,56 @@ impl App {
                 runtime: *runtime,
                 container_id: container_id.to_owned(),
             })
+    }
+
+    fn rebuild_visible(&mut self) {
+        let mut visible: Vec<(Runtime, String)> = self
+            .containers
+            .iter()
+            .flat_map(|(runtime, containers)| {
+                containers.keys().map(move |id| (*runtime, id.clone()))
+            })
+            .collect();
+        visible.sort();
+        self.visible = visible;
+        if self.selected >= self.visible.len() {
+            self.selected = self.visible.len().saturating_sub(1);
+        }
+    }
+
+    pub fn container_rows(&self) -> Vec<(Runtime, &Container)> {
+        self.visible
+            .iter()
+            .filter_map(|(runtime, id)| {
+                self.containers
+                    .get(runtime)
+                    .and_then(|containers| containers.get(id))
+                    .map(|container| (*runtime, container))
+            })
+            .collect()
+    }
+
+    pub fn runtimes_up_count(&self) -> usize {
+        self.runtimes
+            .values()
+            .filter(|status| **status == RuntimeStatus::Up)
+            .count()
+    }
+
+    pub fn runtimes(&self) -> &std::collections::HashMap<Runtime, RuntimeStatus> {
+        &self.runtimes
+    }
+
+    pub fn request_refresh(&mut self) {
+        self.scheduled_sync = true;
+    }
+
+    pub fn visible_len(&self) -> usize {
+        self.visible.len()
+    }
+
+    pub fn drain_effects(&mut self) -> Vec<Effect> {
+        std::mem::take(&mut self.effects)
     }
 }
 

@@ -8,18 +8,15 @@ Gauger connects to the Docker and Podman engines on your machine, shows every co
 
 - Docker and Podman side by side in one table, with automatic socket discovery
 - Live updates from the engine event streams, with no manual polling
-- Per-container ID, name, runtime, state, health, and image
-- Filtering by name, image, ID prefix, or runtime
-- Sorting by runtime, name, state, or health, in either direction
-- Container details popup, including the last lifecycle event seen
-- Automatic reconnection with backoff; rows from a disconnected engine are dimmed and marked as stale
+- Per-container ID, name, runtime, state, and health
+- Automatic reconnection with exponential backoff
 - Plain-text mode (`--no-tui`) that streams container listings and lifecycle events to stdout for piping
 
 ## Roadmap
 
 - [x] Docker and Podman support
-- [x] Interactive terminal interface
-- [x] Container filtering and sorting
+- [x] Interactive terminal interface (basic)
+- [ ] Container filtering and sorting
 - [x] Plain-text output mode
 - [ ] Live resource usage (CPU, memory, network, disk I/O)
 - [ ] Resource usage statistics and history
@@ -85,7 +82,7 @@ cargo install --path .
 gauger
 ```
 
-Gauger starts the interactive interface and connects to every engine it can find. It only needs one: if Docker or Podman is unreachable, the other still works, and the unavailable engine is reported in the footer. If neither can be reached, Gauger exits with an error.
+Gauger starts the interactive interface and connects to every engine it can find. It only needs one: if Docker or Podman is unreachable, the other still works. If neither can be reached, Gauger starts with an empty table and exits normally when you quit.
 
 ### Options
 
@@ -117,14 +114,6 @@ systemctl --user enable --now podman.socket
 - **Docker Desktop** exposes its API over the named pipe `\\.\pipe\docker_engine`. Gauger connects to it automatically via `DOCKER_HOST` defaults; no configuration is needed.
 - **Podman for Windows** exposes its API over `\\.\pipe\podman`. Gauger tries that pipe by default. You can also point Gauger at a different pipe with `CONTAINER_HOST=npipe://\\.\pipe\podman`.
 
-### Filtering
-
-Press `/` and type to filter the table as you go. A container matches when the query is found (case-insensitively) in its name, its image, or its runtime, or when the query is a prefix of its ID.
-
-### Details
-
-Press `Enter` on a container to open a popup with its full ID, image, runtime, state, health, and the last lifecycle event received for it. If the engine is disconnected, the popup warns that the values may be stale.
-
 ### Plain-text mode
 
 Pass `--no-tui` to stream container listings and lifecycle events without starting the interactive interface:
@@ -134,11 +123,13 @@ gauger --no-tui
 ```
 
 ```text
-12:00:00  docker   list     05ae208348f4  postgres                  running     healthy    postgres:18
-12:00:04  docker   start    c1a2b3c4d5e6  worker
+Snapshot of docker:
+  05ae208348f4 postgres (docker) [running] (healthy)
+up: docker
+down: docker, connection refused
 ```
 
-Each container line is written to stdout and starts with a UTC timestamp, the runtime, and the event type (`list`, `create`, `start`, `stop`, `remove`, …). Runtime connection messages go to stderr, so stdout remains suitable for piping. The command exits on `Ctrl+C` or `SIGTERM`.
+Each engine snapshot is listed under a `Snapshot of <runtime>:` heading, followed by one line per container. Lifecycle events and runtime up/down transitions are printed as they occur. All output goes to stdout. The command runs until interrupted with `Ctrl+C` or `SIGTERM`.
 
 ### Keybindings
 
@@ -147,22 +138,15 @@ Each container line is written to stdout and starts with a UTC timestamp, the ru
 | `j` / `k`, `↓` / `↑` | Move selection                 |
 | `g` / `G`            | Jump to first / last container |
 | `Ctrl+u` / `Ctrl+d`  | Page up / down                 |
-| `/`                  | Filter containers              |
-| `c`, `Esc`           | Clear filter                   |
-| `s` / `S`            | Cycle sort key / reverse order |
-| `Enter`              | Open container details         |
 | `r`                  | Refresh container lists        |
-| `?`                  | Help                           |
 | `q`, `Ctrl+c`        | Quit                           |
-
-While typing a filter, `Enter` applies it, `Esc` cancels, and `Ctrl+u` clears it. In the details and help popups, `Esc`, `Enter`, or `q` closes them.
 
 ### Exit codes
 
 | Code | Meaning                                                       |
 | ---- | ------------------------------------------------------------- |
 | `0`  | Normal exit                                                   |
-| `1`  | Runtime error, including no reachable Docker or Podman engine |
+| `1`  | Runtime error |
 | `2`  | Invalid command-line arguments                                |
 
 ## Development
@@ -210,8 +194,8 @@ nix fmt         # format the Nix files
 | `flake.nix`       | Nix package and development shell                                              |
 | `src/runtime/`    | Docker and Podman clients built on [bollard](https://crates.io/crates/bollard) |
 | `src/collector/`  | Per-engine background tasks: snapshots, event streams, reconnects              |
-| `src/app/`        | TUI state: selection, filtering, sorting, input handling                       |
-| `src/ui/`         | [ratatui](https://ratatui.rs) rendering: table, details, help                  |
+| `src/app/`        | TUI state: selection, navigation, input handling                               |
+| `src/ui/`         | [ratatui](https://ratatui.rs) rendering: container table                       |
 | `src/headless.rs` | Plain-text output mode                                                         |
 
 ## License

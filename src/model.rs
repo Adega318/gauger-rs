@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::fmt::Display;
 
 use bollard::plugin::{
@@ -292,14 +291,6 @@ mod tests {
             Action::from("health_status"),
             Action::Health(Health::Unknown)
         );
-    }
-
-    #[test]
-    fn display_impls_honor_padding() {
-        assert_eq!(format!("{:<7}", Runtime::Docker), "docker ");
-        assert_eq!(format!("{:<10}", State::Running), "running   ");
-        assert_eq!(format!("{:<9}", Health::Healthy), "healthy  ");
-        assert_eq!(format!("{:<8}", Action::Start), "start   ");
     }
 
     #[test]

@@ -1,6 +1,6 @@
-use self::app::App;
+use std::time::Duration;
+
 use self::cli::Cli;
-use self::collector::{Collector, CollectorEvent};
 use self::error::GaugerError;
 use self::runtime::RuntimeClient;
 use self::runtime::docker::DockerRuntime;
@@ -10,8 +10,12 @@ mod app;
 mod cli;
 mod collector;
 mod error;
+mod headless;
 mod model;
 mod runtime;
+mod ui;
+
+const TICK_RATE: Duration = Duration::from_millis(250);
 
 #[tokio::main]
 async fn main() {
@@ -32,60 +36,12 @@ async fn run_main() -> Result<(), GaugerError> {
             println!("gauger {}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
-        Cli::Tui => run_tui().await,
-        Cli::NoTui => run_headless().await,
+        Cli::Tui => ui::run_tui().await,
+        Cli::NoTui => headless::run_headless().await,
     }
 }
 
-async fn run_tui() -> Result<(), GaugerError> {
-    todo!()
-}
-async fn run_headless() -> Result<(), GaugerError> {
-    let clients = connect_runtimes()?;
-    let runtimes = clients.iter().map(RuntimeClient::runtime).collect();
-    let mut app = App::new(runtimes);
-
-    let mut collector = Collector::new(clients).spawn();
-
-    while let Some(event) = collector.recv().await {
-        match &event {
-            CollectorEvent::Snapshot {
-                runtime,
-                containers,
-            } => {
-                println!(
-                    "Snapshot of {runtime}:{}",
-                    if containers.is_empty() {
-                        " (empty)"
-                    } else {
-                        ""
-                    }
-                );
-
-                for container in containers {
-                    println!("  {container}");
-                }
-            }
-            CollectorEvent::Container(event) => {
-                println!("Container: {}", event);
-            }
-            CollectorEvent::RuntimeUp { runtime } => {
-                println!("up: {}", runtime)
-            }
-            CollectorEvent::RuntimeDown { runtime, reason } => {
-                println!("down: {}, {}", runtime, reason)
-            }
-        }
-
-        if let Err(err) = app.apply_event(event) {
-            eprintln!("gauger: {err}");
-        }
-    }
-
-    Ok(())
-}
-
-fn connect_runtimes() -> Result<Vec<RuntimeClient>, GaugerError> {
+pub fn connect_runtimes() -> Result<Vec<RuntimeClient>, GaugerError> {
     let mut clients = Vec::new();
 
     if let Ok(client) = DockerRuntime::connect() {

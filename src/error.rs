@@ -12,6 +12,8 @@ pub enum GaugerError {
     Cli(#[from] CliError),
     #[error(transparent)]
     Runtime(#[from] RuntimeError),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
 }
 
 impl GaugerError {
