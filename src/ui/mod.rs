@@ -50,6 +50,7 @@ pub(crate) async fn run_tui() -> Result<(), GaugerError> {
                         Some(Ok(Event::Key(key))) if key.kind == KeyEventKind::Press => {
                             app.handle_key(key);
                         }
+                        Some(Ok(Event::Resize(_, _))) => {}
                         Some(Ok(_)) => {}
                         Some(Err(err)) => return Err(err.into()),
                         None => {}
@@ -147,8 +148,8 @@ fn render(f: &mut ratatui::Frame, app: &App) {
 
     let widths = [
         Constraint::Length(10),
-        Constraint::Length(22),
-        Constraint::Length(12),
+        Constraint::Min(22),
+        Constraint::Min(12),
         Constraint::Length(10),
         Constraint::Length(10),
     ];
@@ -172,7 +173,7 @@ fn render(f: &mut ratatui::Frame, app: &App) {
     f.render_stateful_widget(table, chunks[2], &mut table_state);
 
     // Footer
-    let footer = Paragraph::new("q: quit  r: refresh  up/k down/j: navigate")
+    let footer = Paragraph::new("q: quit  r: refresh  g/G: jump  j/k: navigate  Ctrl+u/d: page")
         .block(Block::default().borders(Borders::ALL));
     f.render_widget(footer, chunks[3]);
 }

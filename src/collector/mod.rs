@@ -60,10 +60,6 @@ impl CollectorHandle {
         self.events.recv().await
     }
 
-    pub fn refresh(&self, runtime: crate::model::Runtime) {
-        let _ = self.commands.send(CollectorCommand::Refresh(runtime));
-    }
-
     pub fn refresh_all(&self) {
         let _ = self.commands.send(CollectorCommand::RefreshAll);
     }

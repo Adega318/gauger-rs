@@ -41,11 +41,14 @@ fn socket_path() -> Result<String, String> {
         return Ok(path.to_string());
     }
 
-    use std::os::unix::fs::MetadataExt;
-
-    let uid = std::fs::metadata("/proc/self")
-        .ok()
-        .map(|metadata| metadata.uid());
+    let uid = if cfg!(target_os = "linux") {
+        use std::os::unix::fs::MetadataExt;
+        std::fs::metadata("/proc/self")
+            .ok()
+            .map(|metadata| metadata.uid())
+    } else {
+        None
+    };
 
     let mut rootless = Vec::new();
     if let Ok(runtime_dir) = env::var("XDG_RUNTIME_DIR") {

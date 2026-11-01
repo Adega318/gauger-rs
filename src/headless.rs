@@ -7,6 +7,7 @@ pub async fn run_headless() -> Result<(), GaugerError> {
     let mut collector = Collector::new(clients).spawn();
 
     loop {
+        let terminated = tokio::signal::ctrl_c();
         tokio::select! {
             Some(event) = collector.recv() => {
                 match &event {
@@ -38,6 +39,7 @@ pub async fn run_headless() -> Result<(), GaugerError> {
                     }
                 }
             }
+            _ = terminated => break Ok(()),
         }
     }
 }

@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::time::Instant;
 
 use crate::collector::CollectorEvent;
 use crate::model::{Action, Container, Health, Runtime, State};
@@ -13,7 +12,6 @@ pub mod input;
 pub enum RuntimeStatus {
     Up,
     Down,
-    Unavailable,
 }
 
 #[derive(Debug)]
@@ -29,7 +27,6 @@ pub struct App {
     pub selected: usize,
     effects: Vec<Effect>,
     scheduled_sync: bool,
-    last_sync: HashMap<Runtime, Instant>,
     pub should_quit: bool,
 }
 
@@ -45,7 +42,6 @@ impl App {
             selected: 0,
             effects: Vec::new(),
             scheduled_sync: false,
-            last_sync: HashMap::new(),
             should_quit: false,
         }
     }
@@ -63,8 +59,6 @@ impl App {
                 runtime,
                 containers,
             } => {
-                self.last_sync.insert(runtime, Instant::now());
-
                 let containers = containers
                     .into_iter()
                     .map(|container| (container.id.clone(), container))
@@ -95,30 +89,30 @@ impl App {
                             .or_insert(container);
                     }
                     Action::Start => {
-                        self.set_state(runtime, container_id, State::Running)?;
-                        self.set_health(runtime, container_id, Health::Starting)?;
+                        self.set_state(runtime, container_id, State::Running);
+                        self.set_health(runtime, container_id, Health::Starting);
                     }
                     Action::Stop => {
-                        self.set_state(runtime, container_id, State::Stopping)?;
+                        self.set_state(runtime, container_id, State::Stopping);
                     }
                     Action::Die => {
-                        self.set_state(runtime, container_id, State::Exited)?;
-                        self.set_health(runtime, container_id, Health::Empty)?;
+                        self.set_state(runtime, container_id, State::Exited);
+                        self.set_health(runtime, container_id, Health::Empty);
                     }
                     Action::Pause => {
-                        self.set_state(runtime, container_id, State::Paused)?;
+                        self.set_state(runtime, container_id, State::Paused);
                     }
                     Action::Unpause => {
-                        self.set_state(runtime, container_id, State::Running)?;
+                        self.set_state(runtime, container_id, State::Running);
                     }
                     Action::Restart => {
-                        self.set_state(runtime, container_id, State::Restarting)?;
-                        self.set_health(runtime, container_id, Health::Starting)?;
+                        self.set_state(runtime, container_id, State::Restarting);
+                        self.set_health(runtime, container_id, Health::Starting);
                     }
                     Action::Remove => {
-                        self.set_state(runtime, container_id, State::Removing)?;
-                        self.set_health(runtime, container_id, Health::Empty)?;
-                        self.scheduled_sync = true;
+                        if let Some(containers) = self.containers.get_mut(runtime) {
+                            containers.remove(container_id);
+                        }
                     }
                     Action::Rename => {
                         if let Some(name) = &container_event.name
@@ -131,11 +125,11 @@ impl App {
                         }
                     }
                     Action::Oom => {
-                        self.set_state(runtime, container_id, State::Exited)?;
-                        self.set_health(runtime, container_id, Health::Empty)?;
+                        self.set_state(runtime, container_id, State::Exited);
+                        self.set_health(runtime, container_id, Health::Empty);
                     }
                     Action::Health(health) => {
-                        self.set_health(runtime, container_id, health)?;
+                        self.set_health(runtime, container_id, health);
                     }
                     Action::Unknown(_) => {}
                 }
@@ -151,26 +145,16 @@ impl App {
         Ok(())
     }
 
-    fn set_state(
-        &mut self,
-        runtime: &Runtime,
-        container_id: &str,
-        state: State,
-    ) -> Result<(), AppError> {
-        self.container_mut(runtime, container_id)?.state = state;
-
-        Ok(())
+    fn set_state(&mut self, runtime: &Runtime, container_id: &str, state: State) {
+        if let Ok(container) = self.container_mut(runtime, container_id) {
+            container.state = state;
+        }
     }
 
-    fn set_health(
-        &mut self,
-        runtime: &Runtime,
-        container_id: &str,
-        health: Health,
-    ) -> Result<(), AppError> {
-        self.container_mut(runtime, container_id)?.health = health;
-
-        Ok(())
+    fn set_health(&mut self, runtime: &Runtime, container_id: &str, health: Health) {
+        if let Ok(container) = self.container_mut(runtime, container_id) {
+            container.health = health;
+        }
     }
 
     fn container_mut(
@@ -219,10 +203,6 @@ impl App {
             .values()
             .filter(|status| **status == RuntimeStatus::Up)
             .count()
-    }
-
-    pub fn runtimes(&self) -> &std::collections::HashMap<Runtime, RuntimeStatus> {
-        &self.runtimes
     }
 
     pub fn request_refresh(&mut self) {
@@ -378,7 +358,6 @@ mod tests {
             (Action::Pause, State::Paused, Health::Healthy),
             (Action::Unpause, State::Running, Health::Healthy),
             (Action::Restart, State::Restarting, Health::Starting),
-            (Action::Remove, State::Removing, Health::Empty),
             (Action::Oom, State::Exited, Health::Empty),
         ];
 
@@ -390,6 +369,16 @@ mod tests {
 
             assert_container(&app, Runtime::Docker, "c1", state, health);
         }
+    }
+
+    #[test]
+    fn remove_removes_container() {
+        let mut app = app_with(Runtime::Docker, vec![container(Runtime::Docker, "c1")]);
+
+        app.apply_event(event(Runtime::Docker, "c1", Action::Remove))
+            .unwrap();
+
+        assert!(!app.containers[&Runtime::Docker].contains_key("c1"));
     }
 
     #[test]
@@ -452,22 +441,12 @@ mod tests {
     }
 
     #[test]
-    fn event_for_unknown_container_returns_error() {
+    fn event_for_unknown_container_is_ignored() {
         let mut app = App::new(vec![Runtime::Docker]);
 
-        let error = app
-            .apply_event(event(Runtime::Docker, "missing", Action::Start))
-            .unwrap_err();
-
-        match error {
-            AppError::ContainerNotFound {
-                runtime,
-                container_id,
-            } => {
-                assert_eq!(runtime, Runtime::Docker);
-                assert_eq!(container_id, "missing");
-            }
-        }
+        let result = app.apply_event(event(Runtime::Docker, "missing", Action::Start));
+        assert!(result.is_ok());
+        assert!(!app.containers.contains_key(&Runtime::Docker));
     }
 
     #[test]
