@@ -187,6 +187,21 @@ nix flake check # evaluate and check the flake
 nix fmt         # format the Nix files
 ```
 
+### Running CI locally
+
+With [act](https://github.com/nektos/act) and Docker, the linux CI jobs can be run locally:
+
+```bash
+act -l
+act -j fmt
+act -j clippy
+act -j msrv
+act -j package
+act -j test --matrix os:ubuntu-latest
+```
+
+The release and nix jobs are not supported for local testing.
+
 ### Project layout
 
 | Path              | Purpose                                                                        |
