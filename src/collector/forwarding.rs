@@ -23,7 +23,26 @@ pub(super) async fn forward_event(
 
     enrich_health(client, &mut event).await;
 
-    tx.send(CollectorEvent::Container(event)).await.is_ok()
+    let probe = matches!(event.action, Action::Start | Action::Restart)
+        .then(|| (event.runtime, event.id.clone()));
+
+    if tx.send(CollectorEvent::Container(event)).await.is_err() {
+        return false;
+    }
+
+    if let Some((runtime, id)) = probe
+        && let Ok(Ok(health)) = timeout(HEALTH_INSPECT_TIMEOUT, client.inspect_health(&id)).await
+    {
+        let follow_up = ContainerEvent {
+            runtime,
+            id,
+            name: None,
+            action: Action::Health(health),
+        };
+        return tx.send(CollectorEvent::Container(follow_up)).await.is_ok();
+    }
+
+    true
 }
 
 async fn enrich_health(client: &RuntimeClient, event: &mut ContainerEvent) {

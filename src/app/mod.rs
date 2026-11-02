@@ -90,7 +90,7 @@ impl App {
                     }
                     Action::Start => {
                         self.set_state(runtime, container_id, State::Running);
-                        self.set_health(runtime, container_id, Health::Starting);
+                        self.set_health(runtime, container_id, Health::Unknown);
                     }
                     Action::Stop => {
                         self.set_state(runtime, container_id, State::Stopping);
@@ -107,7 +107,7 @@ impl App {
                     }
                     Action::Restart => {
                         self.set_state(runtime, container_id, State::Restarting);
-                        self.set_health(runtime, container_id, Health::Starting);
+                        self.set_health(runtime, container_id, Health::Unknown);
                     }
                     Action::Remove => {
                         if let Some(containers) = self.containers.get_mut(runtime) {
@@ -129,6 +129,9 @@ impl App {
                         self.set_health(runtime, container_id, Health::Empty);
                     }
                     Action::Health(health) => {
+                        if health == Health::Healthy {
+                            self.set_state(runtime, container_id, State::Running);
+                        }
                         self.set_health(runtime, container_id, health);
                     }
                     Action::Unknown(_) => {}
@@ -142,6 +145,7 @@ impl App {
             }
         }
 
+        self.rebuild_visible();
         Ok(())
     }
 
@@ -360,12 +364,12 @@ mod tests {
     #[test]
     fn lifecycle_actions_update_state_and_health() {
         let cases = [
-            (Action::Start, State::Running, Health::Starting),
+            (Action::Start, State::Running, Health::Unknown),
             (Action::Stop, State::Stopping, Health::Healthy),
             (Action::Die, State::Exited, Health::Empty),
             (Action::Pause, State::Paused, Health::Healthy),
             (Action::Unpause, State::Running, Health::Healthy),
-            (Action::Restart, State::Restarting, Health::Starting),
+            (Action::Restart, State::Restarting, Health::Unknown),
             (Action::Oom, State::Exited, Health::Empty),
         ];
 
