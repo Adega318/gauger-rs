@@ -3,6 +3,7 @@ use thiserror::Error;
 use crate::app::error::AppError;
 use crate::cli::CliError;
 use crate::runtime::error::RuntimeError;
+use crate::ui::error::UiError;
 
 #[derive(Debug, Error)]
 pub enum GaugerError {
@@ -13,7 +14,7 @@ pub enum GaugerError {
     #[error(transparent)]
     Runtime(#[from] RuntimeError),
     #[error(transparent)]
-    Io(#[from] std::io::Error),
+    Ui(#[from] UiError),
 }
 
 impl GaugerError {

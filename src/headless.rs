@@ -1,9 +1,8 @@
 use crate::collector::{Collector, CollectorEvent};
-use crate::connect_runtimes;
 use crate::error::GaugerError;
+use crate::runtime::RuntimeClient;
 
-pub async fn run_headless() -> Result<(), GaugerError> {
-    let clients = connect_runtimes()?;
+pub async fn run_headless(clients: Vec<RuntimeClient>) -> Result<(), GaugerError> {
     let mut collector = Collector::new(clients).spawn();
 
     loop {

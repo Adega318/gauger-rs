@@ -9,8 +9,6 @@ use crate::app::App;
 
 use super::style;
 
-const MAX_CONTENT_WIDTH: u16 = 110;
-
 pub(crate) fn render(frame: &mut Frame, app: &App) {
     let area = frame.area();
 
@@ -21,23 +19,9 @@ pub(crate) fn render(frame: &mut Frame, app: &App) {
     ])
     .areas(area);
 
-    let header_area = centered_area(header_area);
-    let body_area = centered_area(body_area);
-    let footer_area = centered_area(footer_area);
-
     render_header(frame, header_area, app);
     render_table(frame, body_area, app);
     render_footer(frame, footer_area);
-}
-
-fn centered_area(area: Rect) -> Rect {
-    let width = area.width.min(MAX_CONTENT_WIDTH);
-
-    Rect {
-        x: area.x + (area.width - width) / 2,
-        width,
-        ..area
-    }
 }
 
 fn render_header(frame: &mut Frame, area: Rect, app: &App) {

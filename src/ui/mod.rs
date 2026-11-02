@@ -1,33 +1,37 @@
 use std::io;
+use std::time::Duration;
 
 use crossterm::event::{Event, EventStream, KeyEventKind};
 use crossterm::execute;
 use crossterm::terminal::{
-    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+    BeginSynchronizedUpdate, EndSynchronizedUpdate, EnterAlternateScreen, LeaveAlternateScreen,
+    disable_raw_mode, enable_raw_mode,
 };
-use futures_util::StreamExt;
+use futures_util::{FutureExt, StreamExt};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use tokio::time::MissedTickBehavior;
 
 use crate::app::{App, Effect};
 use crate::collector::Collector;
-use crate::error::GaugerError;
 use crate::runtime::RuntimeClient;
-use crate::{TICK_RATE, connect_runtimes};
 
+use self::error::UiError;
 use self::view::render;
 
+pub mod error;
 mod style;
 mod view;
 
-pub(crate) async fn run_tui() -> Result<(), GaugerError> {
-    let clients = connect_runtimes()?;
+const TICK_RATE: Duration = Duration::from_millis(250);
+
+pub(crate) async fn run_tui(clients: Vec<RuntimeClient>) -> Result<(), UiError> {
     let runtimes = clients.iter().map(RuntimeClient::runtime).collect();
     let mut app = App::new(runtimes);
     let mut collector = Collector::new(clients).spawn();
 
     enable_raw_mode()?;
+
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
@@ -46,16 +50,12 @@ pub(crate) async fn run_tui() -> Result<(), GaugerError> {
                     }
                 }
 
-                event = input.next() => {
-                    match event {
-                        Some(Ok(Event::Key(key))) if key.kind == KeyEventKind::Press => {
-                            app.handle_key(key);
-                        }
-                        Some(Ok(Event::Resize(_, _))) => {}
-                        Some(Ok(_)) => {}
-                        Some(Err(err)) => return Err(err.into()),
-                        None => {}
+                event = input.next() => {handle_input(&mut app,event)?;
+                    while let Some(event) = input.next().now_or_never(){
+                        handle_input(&mut app, event)?
+                            ;
                     }
+
                 }
 
                 _ = tick.tick() => app.tick()
@@ -71,9 +71,9 @@ pub(crate) async fn run_tui() -> Result<(), GaugerError> {
                 break Ok(());
             }
 
-            terminal
-                .draw(|f| render(f, &app))
-                .map_err(|e| GaugerError::Io(io::Error::other(e.to_string())))?;
+            execute!(terminal.backend_mut(), BeginSynchronizedUpdate)?;
+            terminal.draw(|f| render(f, &app))?;
+            execute!(terminal.backend_mut(), EndSynchronizedUpdate)?;
         }
     })
     .await;
@@ -83,4 +83,18 @@ pub(crate) async fn run_tui() -> Result<(), GaugerError> {
     let _ = terminal.show_cursor();
 
     result
+}
+
+fn handle_input(app: &mut App, event: Option<Result<Event, io::Error>>) -> Result<(), UiError> {
+    match event {
+        Some(Ok(Event::Key(key))) if key.kind == KeyEventKind::Press => {
+            app.handle_key(key);
+        }
+        Some(Ok(Event::Resize(_, _))) => {}
+        Some(Ok(_)) => {}
+        Some(Err(err)) => return Err(err.into()),
+        None => {}
+    }
+
+    Ok(())
 }
