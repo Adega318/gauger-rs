@@ -1,7 +1,7 @@
 use crossterm::event::KeyEventKind;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use super::{App, Effect};
+use super::App;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Input {
@@ -56,7 +56,7 @@ impl App {
             Input::Bottom => self.selected = self.visible.len().saturating_sub(1),
             Input::PageDown => self.move_selection(10),
             Input::PageUp => self.move_selection(-10),
-            Input::Refresh => self.effects.push(Effect::Refresh),
+            Input::Refresh => self.request_refresh(),
         }
     }
 

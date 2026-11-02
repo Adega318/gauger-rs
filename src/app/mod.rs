@@ -172,18 +172,26 @@ impl App {
     }
 
     fn rebuild_visible(&mut self) {
-        let mut visible: Vec<(Runtime, String)> = self
+        let selected = self.visible.get(self.selected).cloned();
+        let mut rows: Vec<(&str, Runtime, &str)> = self
             .containers
             .iter()
             .flat_map(|(runtime, containers)| {
-                containers.keys().map(move |id| (*runtime, id.clone()))
+                containers
+                    .values()
+                    .map(move |c| (c.name.as_str(), *runtime, c.id.as_str()))
             })
             .collect();
-        visible.sort();
-        self.visible = visible;
-        if self.selected >= self.visible.len() {
-            self.selected = self.visible.len().saturating_sub(1);
-        }
+        rows.sort();
+
+        self.visible = rows
+            .into_iter()
+            .map(|(_, runtime, id)| (runtime, id.to_owned()))
+            .collect();
+
+        self.selected = selected
+            .and_then(|key| self.visible.iter().position(|row| *row == key))
+            .unwrap_or_else(|| self.selected.min(self.visible.len().saturating_sub(1)));
     }
 
     pub fn container_rows(&self) -> Vec<(Runtime, &Container)> {

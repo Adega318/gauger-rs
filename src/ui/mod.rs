@@ -18,8 +18,8 @@ use crate::{TICK_RATE, connect_runtimes};
 
 use self::view::render;
 
-mod view;
 mod style;
+mod view;
 
 pub(crate) async fn run_tui() -> Result<(), GaugerError> {
     let clients = connect_runtimes()?;
@@ -58,10 +58,7 @@ pub(crate) async fn run_tui() -> Result<(), GaugerError> {
                     }
                 }
 
-                _ = tick.tick() => {
-                    app.request_refresh();
-                    app.tick();
-                }
+                _ = tick.tick() => app.tick()
             }
 
             for effect in app.drain_effects() {
