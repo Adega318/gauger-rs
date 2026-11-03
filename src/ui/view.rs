@@ -9,7 +9,7 @@ use crate::app::{App, RuntimeStatus};
 
 use super::style;
 
-pub(crate) fn render(frame: &mut Frame, app: &App) {
+pub(crate) fn render(frame: &mut Frame, app: &App, table_state: &mut TableState) {
     let area = frame.area();
 
     let [header_area, body_area, footer_area] = Layout::vertical([
@@ -20,7 +20,7 @@ pub(crate) fn render(frame: &mut Frame, app: &App) {
     .areas(area);
 
     render_header(frame, header_area, app);
-    render_table(frame, body_area, app);
+    render_table(frame, body_area, app, table_state);
     render_footer(frame, footer_area);
 }
 
@@ -59,7 +59,7 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(Paragraph::new(line).alignment(Alignment::Left), area);
 }
 
-fn render_table(frame: &mut Frame, area: Rect, app: &App) {
+fn render_table(frame: &mut Frame, area: Rect, app: &App, table_state: &mut TableState) {
     let rows = app
         .container_rows()
         .into_iter()
@@ -91,12 +91,11 @@ fn render_table(frame: &mut Frame, area: Rect, app: &App) {
         .row_highlight_style(style::selected())
         .highlight_symbol(Span::styled("› ", style::highlight()));
 
-    let mut state = TableState::default();
-    state.select(
+    table_state.select(
         (app.visible_len() > 0).then_some(app.selected.min(app.visible_len().saturating_sub(1))),
     );
 
-    frame.render_stateful_widget(table, area, &mut state);
+    frame.render_stateful_widget(table, area, table_state);
 }
 
 fn render_footer(frame: &mut Frame, area: Rect) {

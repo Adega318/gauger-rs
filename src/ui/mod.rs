@@ -11,6 +11,7 @@ use crossterm::terminal::{
 use futures_util::{FutureExt, StreamExt};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
+use ratatui::widgets::TableState;
 use tokio::time::MissedTickBehavior;
 
 use crate::app::{App, Effect};
@@ -43,6 +44,7 @@ pub(crate) async fn run_tui(clients: Vec<RuntimeClient>) -> Result<(), UiError> 
     let mut tick = tokio::time::interval(TICK_RATE);
     tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
     let mut input = EventStream::new();
+    let mut table_state = TableState::default();
 
     let result = (async {
         loop {
@@ -53,10 +55,12 @@ pub(crate) async fn run_tui(clients: Vec<RuntimeClient>) -> Result<(), UiError> 
                     }
                 }
 
-                event = input.next() => {handle_input(&mut app,event)?;
-                    while let Some(event) = input.next().now_or_never(){
-                        handle_input(&mut app, event)?
-                            ;
+                event = input.next() => {
+                    let mut batching = is_resize(&event);
+                    handle_input(&mut app,event)?;
+                    while batching && let Some(event) = input.next().now_or_never(){
+                        batching = is_resize(&event);
+                        handle_input(&mut app, event)?;
                     }
                 }
 
@@ -85,7 +89,7 @@ pub(crate) async fn run_tui(clients: Vec<RuntimeClient>) -> Result<(), UiError> 
             }
 
             execute!(terminal.backend_mut(), BeginSynchronizedUpdate)?;
-            terminal.draw(|f| render(f, &app))?;
+            terminal.draw(|f| render(f, &app, &mut table_state))?;
             execute!(terminal.backend_mut(), EndSynchronizedUpdate)?;
         }
     })
@@ -96,6 +100,10 @@ pub(crate) async fn run_tui(clients: Vec<RuntimeClient>) -> Result<(), UiError> 
     let _ = terminal.show_cursor();
 
     result
+}
+
+fn is_resize(event: &Option<Result<Event, std::io::Error>>) -> bool {
+    matches!(event, Some(Ok(Event::Resize(_, _))))
 }
 
 fn handle_input(app: &mut App, event: Option<Result<Event, io::Error>>) -> Result<(), UiError> {
