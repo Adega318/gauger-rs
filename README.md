@@ -8,8 +8,7 @@ Gauger connects to the Docker and Podman engines on your machine, shows every co
 
 - Docker and Podman side by side in one table, with automatic socket discovery
 - Live updates from the engine event streams, with no manual polling
-- Per-container ID, name, runtime, state, and health
-- Automatic reconnection with exponential backoff
+- Per-container ID, name, runtime, state, and health and detailed view
 - Plain-text mode (`--no-tui`) that streams container listings and lifecycle events to stdout for piping
 
 ## Roadmap
@@ -105,17 +104,7 @@ A non-root process never falls back to the system socket, because that can point
 
 #### Connection retry
 
-Gauger retries connecting to each engine with exponential backoff (1s, 2s, 4s … up to 30s,
-capped at five attempts) before giving up on that engine. An unreachable engine does not
-prevent the others from working. In the TUI, press `r` to retry connecting to any engine
-that is still down; engines that were reachable at startup are retried automatically by the
-supervisor when their event stream recovers.
-
-The Podman API socket must be running. For a rootless setup, enable it with:
-
-```bash
-systemctl --user enable --now podman.socket
-```
+In the TUI, press `r` to retry connecting to any engine that is down.
 
 #### Windows
 
@@ -147,6 +136,7 @@ Each engine snapshot is listed under a `Snapshot of <runtime>:` heading, followe
 | `g` / `G`            | Jump to first / last container                   |
 | `Ctrl+u` / `Ctrl+d`  | Page up / down                                   |
 | `r`                  | Refresh lists; retry connecting to down runtimes |
+| Enter                | Selection details                                |
 | `q`, `Ctrl+c`        | Quit                                             |
 
 ### Exit codes

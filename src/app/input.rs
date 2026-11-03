@@ -13,6 +13,7 @@ pub enum Input {
     PageUp,
     PageDown,
     Refresh,
+    Select,
 }
 
 pub fn translate(key: KeyEvent) -> Option<Input> {
@@ -27,6 +28,7 @@ pub fn translate(key: KeyEvent) -> Option<Input> {
         KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => Input::PageDown,
         KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => Input::PageUp,
         KeyCode::Char('r') => Input::Refresh,
+        KeyCode::Enter => Input::Select,
         _ => return None,
     })
 }
@@ -49,14 +51,20 @@ impl App {
 
     fn handle_input(&mut self, input: Input) {
         match input {
-            Input::Quit => self.should_quit = true,
+            Input::Refresh => self.request_refresh(),
             Input::Down => self.move_selection(1),
             Input::Up => self.move_selection(-1),
             Input::Top => self.selected = 0,
             Input::Bottom => self.selected = self.visible.len().saturating_sub(1),
             Input::PageDown => self.move_selection(10),
             Input::PageUp => self.move_selection(-10),
-            Input::Refresh => self.request_refresh(),
+
+            Input::Quit if self.show_detail => self.show_detail = false,
+            Input::Quit => self.should_quit = true,
+
+            _ if self.show_detail => {}
+
+            Input::Select => self.show_detail = true,
         }
     }
 

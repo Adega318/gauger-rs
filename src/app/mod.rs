@@ -25,6 +25,7 @@ pub struct App {
     containers: HashMap<Runtime, HashMap<String, Container>>,
     visible: Vec<(Runtime, String)>,
     pub selected: usize,
+    pub show_detail: bool,
     effects: Vec<Effect>,
     scheduled_sync: bool,
     pub should_quit: bool,
@@ -40,6 +41,7 @@ impl App {
             containers: HashMap::new(),
             visible: Vec::new(),
             selected: 0,
+            show_detail: false,
             effects: Vec::new(),
             scheduled_sync: false,
             should_quit: false,
@@ -201,6 +203,23 @@ impl App {
         self.selected = selected
             .and_then(|key| self.visible.iter().position(|row| *row == key))
             .unwrap_or_else(|| self.selected.min(self.visible.len().saturating_sub(1)));
+    }
+
+    pub fn container(&self, visible_pos: usize) -> (Runtime, &Container) {
+        let (runtime, id) = self
+            .visible
+            .get(visible_pos)
+            .or_else(|| self.visible.last())
+            .expect("Visible list should not be empty");
+
+        let container = self
+            .containers
+            .get(runtime)
+            .expect("Runtime must exist in containers map") // Replaced unwrap()
+            .get(id)
+            .expect("Container ID must exist in runtime map");
+
+        (*runtime, container)
     }
 
     pub fn container_rows(&self) -> Vec<(Runtime, &Container)> {

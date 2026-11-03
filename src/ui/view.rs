@@ -1,13 +1,17 @@
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Layout, Rect},
+    layout::{Alignment, Constraint, Flex, Layout, Rect},
     text::{Line, Span},
-    widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState},
+    widgets::{
+        Block, BorderType, Borders, Cell, Clear, Padding, Paragraph, Row, Table, TableState,
+    },
 };
 
 use crate::app::{App, RuntimeStatus};
 
 use super::style;
+
+const LABEL_WIDTH: usize = 9;
 
 pub(crate) fn render(frame: &mut Frame, app: &App, table_state: &mut TableState) {
     let area = frame.area();
@@ -22,6 +26,10 @@ pub(crate) fn render(frame: &mut Frame, app: &App, table_state: &mut TableState)
     render_header(frame, header_area, app);
     render_table(frame, body_area, app, table_state);
     render_footer(frame, footer_area);
+
+    if app.show_detail {
+        render_detail(frame, app);
+    }
 }
 
 fn render_header(frame: &mut Frame, area: Rect, app: &App) {
@@ -98,22 +106,68 @@ fn render_table(frame: &mut Frame, area: Rect, app: &App, table_state: &mut Tabl
     frame.render_stateful_widget(table, area, table_state);
 }
 
+fn render_detail(frame: &mut Frame, app: &App) {
+    let area = centered_rect(frame.area(), 50, 10);
+    frame.render_widget(Clear, area);
+
+    let (_, container) = app.container(app.selected);
+
+    let text = vec![
+        detail_line(
+            "ID",
+            Span::styled(container.id.to_string(), style::normal()),
+        ),
+        detail_line(
+            "Name",
+            Span::styled(container.name.to_string(), style::normal()),
+        ),
+        detail_line(
+            "Image",
+            Span::styled(container.image.to_string(), style::normal()),
+        ),
+        detail_line(
+            "Runtime",
+            Span::styled(
+                container.runtime.to_string(),
+                style::runtime(container.runtime),
+            ),
+        ),
+        detail_line(
+            "State",
+            Span::styled(container.state.to_string(), style::state(container.state)),
+        ),
+        detail_line(
+            "Health",
+            Span::styled(
+                container.health.to_string(),
+                style::health(container.health),
+            ),
+        ),
+    ];
+
+    let popup = Paragraph::new(text).block(
+        Block::bordered()
+            .border_type(BorderType::Rounded)
+            .border_style(style::border())
+            .title(format!(" {} Details ", container.name))
+            .title_style(style::title())
+            .padding(Padding::new(2, 2, 1, 1)),
+    );
+
+    frame.render_widget(popup, area);
+}
+
 fn render_footer(frame: &mut Frame, area: Rect) {
     let shortcuts = [
         ("q", "quit"),
         ("r", "refresh"),
+        ("enter", "details"),
         ("g/G", "jump"),
         ("j/k", "navigate"),
         ("Ctrl+u/d", "page"),
     ];
 
-    let spans = shortcuts.into_iter().flat_map(|(key, description)| {
-        [
-            Span::styled(format!(" {key} "), style::shortcut()),
-            Span::styled(format!("{description}  "), style::muted()),
-        ]
-    });
-
+    let spans = shortcut_spans(&shortcuts);
     let footer = Paragraph::new(Line::from_iter(spans)).block(
         Block::default()
             .borders(Borders::TOP)
@@ -121,4 +175,35 @@ fn render_footer(frame: &mut Frame, area: Rect) {
     );
 
     frame.render_widget(footer, area);
+}
+
+fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
+    let [area] = Layout::horizontal([Constraint::Length(width)])
+        .flex(Flex::Center)
+        .areas(area);
+
+    let [area] = Layout::vertical([Constraint::Length(height)])
+        .flex(Flex::Center)
+        .areas(area);
+
+    area
+}
+
+fn detail_line<'a>(label: &str, value: impl Into<Span<'a>>) -> Line<'a> {
+    Line::from(vec![
+        Span::styled(format!("{label:<LABEL_WIDTH$}"), style::header()),
+        value.into(),
+    ])
+}
+
+fn shortcut_spans<'a>(shortcuts: &[(&'a str, &'a str)]) -> Vec<Span<'a>> {
+    shortcuts
+        .iter()
+        .flat_map(|(key, description)| {
+            [
+                Span::styled(format!(" {key} "), style::shortcut()),
+                Span::styled(format!("{description}  "), style::muted()),
+            ]
+        })
+        .collect()
 }
