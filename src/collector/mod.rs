@@ -43,6 +43,7 @@ impl Collector {
 
         CollectorHandle {
             events,
+            event_tx: tx,
             commands,
             tasks,
         }
@@ -51,6 +52,7 @@ impl Collector {
 
 pub struct CollectorHandle {
     events: mpsc::Receiver<CollectorEvent>,
+    event_tx: mpsc::Sender<CollectorEvent>,
     commands: broadcast::Sender<CollectorCommand>,
     tasks: Vec<JoinHandle<()>>,
 }
@@ -62,6 +64,15 @@ impl CollectorHandle {
 
     pub fn refresh_all(&self) {
         let _ = self.commands.send(CollectorCommand::RefreshAll);
+    }
+
+    pub fn add_runtime(&mut self, client: RuntimeClient) {
+        let tx = self.event_tx.clone();
+        let commands = self.commands.subscribe();
+
+        self.tasks.push(tokio::spawn(supervisor::watch_runtime(
+            client, tx, commands,
+        )));
     }
 }
 

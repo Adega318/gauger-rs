@@ -1,11 +1,11 @@
 use ratatui::{
     Frame,
-    layout::{Constraint, Layout, Rect},
+    layout::{Alignment, Constraint, Layout, Rect},
     text::{Line, Span},
     widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState},
 };
 
-use crate::app::App;
+use crate::app::{App, RuntimeStatus};
 
 use super::style;
 
@@ -26,23 +26,37 @@ pub(crate) fn render(frame: &mut Frame, app: &App) {
 
 fn render_header(frame: &mut Frame, area: Rect, app: &App) {
     let containers = app.visible_len();
-    let runtimes = app.runtimes_up_count();
+    let runtimes = app.runtimes();
 
-    let line = Line::from(vec![
+    let mut spans = vec![
         Span::styled("gauger", style::title()),
         Span::styled(format!(" v{}", env!("CARGO_PKG_VERSION")), style::muted()),
-        Span::styled("  │  ", style::muted()),
+        Span::styled(" │ ", style::muted()),
         Span::styled(containers.to_string(), style::highlight()),
         Span::raw(format!(
             " container{}",
             if containers == 1 { "" } else { "s" }
         )),
-        Span::styled("  │  ", style::muted()),
-        Span::styled(runtimes.to_string(), style::success()),
-        Span::raw(format!(" runtime{}", if runtimes == 1 { "" } else { "s" })),
-    ]);
+        Span::styled(" │ ", style::muted()),
+    ];
 
-    frame.render_widget(Paragraph::new(line), area);
+    for (runtime, status) in runtimes {
+        let (indicator, runtime_style) = match status {
+            RuntimeStatus::Up => ("●", style::success()),
+            RuntimeStatus::Down => ("✖", style::danger()),
+        };
+
+        spans.extend([
+            Span::styled(indicator, runtime_style),
+            Span::raw(" "),
+            Span::styled(runtime.to_string(), runtime_style),
+            Span::raw("  "),
+        ]);
+    }
+
+    let line = Line::from(spans);
+
+    frame.render_widget(Paragraph::new(line).alignment(Alignment::Left), area);
 }
 
 fn render_table(frame: &mut Frame, area: Rect, app: &App) {

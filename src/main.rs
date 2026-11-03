@@ -1,8 +1,8 @@
 use self::cli::Cli;
 use self::error::GaugerError;
 use self::runtime::RuntimeClient;
-use self::runtime::docker::DockerRuntime;
-use self::runtime::podman::PodmanRuntime;
+use self::runtime::connect_with_retry;
+use crate::model::Runtime;
 
 mod app;
 mod cli;
@@ -32,22 +32,20 @@ async fn run_main() -> Result<(), GaugerError> {
             println!("gauger {}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
-        Cli::Tui => ui::run_tui(connect_runtimes()?)
+        Cli::Tui => ui::run_tui(connect_runtimes().await?)
             .await
             .map_err(GaugerError::Ui),
-        Cli::NoTui => headless::run_headless(connect_runtimes()?).await,
+        Cli::NoTui => headless::run_headless(connect_runtimes().await?).await,
     }
 }
 
-pub fn connect_runtimes() -> Result<Vec<RuntimeClient>, GaugerError> {
+pub async fn connect_runtimes() -> Result<Vec<RuntimeClient>, GaugerError> {
     let mut clients = Vec::new();
 
-    if let Ok(client) = DockerRuntime::connect() {
-        clients.push(client);
-    }
-
-    if let Ok(client) = PodmanRuntime::connect() {
-        clients.push(client);
+    for runtime in [Runtime::Docker, Runtime::Podman] {
+        if let Ok(client) = connect_with_retry(runtime).await {
+            clients.push(client);
+        }
     }
 
     Ok(clients)

@@ -210,11 +210,19 @@ impl App {
             .collect()
     }
 
-    pub fn runtimes_up_count(&self) -> usize {
+    pub fn runtimes(&self) -> Vec<(Runtime, RuntimeStatus)> {
         self.runtimes
-            .values()
-            .filter(|status| **status == RuntimeStatus::Up)
-            .count()
+            .iter()
+            .map(|(runtime, status)| (*runtime, *status))
+            .collect()
+    }
+
+    pub fn down_runtimes(&self) -> Vec<Runtime> {
+        self.runtimes
+            .iter()
+            .filter(|(_, status)| **status == RuntimeStatus::Down)
+            .map(|(runtime, _)| *runtime)
+            .collect()
     }
 
     pub fn request_refresh(&mut self) {
@@ -477,5 +485,28 @@ mod tests {
         })
         .unwrap();
         assert_eq!(app.runtimes[&Runtime::Docker], RuntimeStatus::Down);
+    }
+
+    #[test]
+    fn down_runtimes_returns_only_down_runtimes() {
+        let mut app = App::new(vec![Runtime::Docker, Runtime::Podman]);
+
+        let mut down = app.down_runtimes();
+        down.sort();
+        assert_eq!(down, vec![Runtime::Docker, Runtime::Podman]);
+
+        app.apply_event(CollectorEvent::RuntimeUp {
+            runtime: Runtime::Docker,
+        })
+        .unwrap();
+
+        assert_eq!(app.down_runtimes(), vec![Runtime::Podman]);
+
+        app.apply_event(CollectorEvent::RuntimeUp {
+            runtime: Runtime::Podman,
+        })
+        .unwrap();
+
+        assert!(app.down_runtimes().is_empty());
     }
 }

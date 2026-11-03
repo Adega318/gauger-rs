@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io;
 use std::time::Duration;
 
@@ -14,7 +15,8 @@ use tokio::time::MissedTickBehavior;
 
 use crate::app::{App, Effect};
 use crate::collector::Collector;
-use crate::runtime::RuntimeClient;
+use crate::model::Runtime;
+use crate::runtime::{RuntimeClient, connect};
 
 use self::error::UiError;
 use self::view::render;
@@ -26,8 +28,9 @@ mod view;
 const TICK_RATE: Duration = Duration::from_millis(250);
 
 pub(crate) async fn run_tui(clients: Vec<RuntimeClient>) -> Result<(), UiError> {
-    let runtimes = clients.iter().map(RuntimeClient::runtime).collect();
-    let mut app = App::new(runtimes);
+    let mut watched: HashSet<Runtime> = clients.iter().map(RuntimeClient::runtime).collect();
+
+    let mut app = App::new(vec![Runtime::Docker, Runtime::Podman]);
     let mut collector = Collector::new(clients).spawn();
 
     enable_raw_mode()?;
@@ -55,7 +58,6 @@ pub(crate) async fn run_tui(clients: Vec<RuntimeClient>) -> Result<(), UiError> 
                         handle_input(&mut app, event)?
                             ;
                     }
-
                 }
 
                 _ = tick.tick() => app.tick()
@@ -63,7 +65,18 @@ pub(crate) async fn run_tui(clients: Vec<RuntimeClient>) -> Result<(), UiError> 
 
             for effect in app.drain_effects() {
                 match effect {
-                    Effect::Refresh => collector.refresh_all(),
+                    Effect::Refresh => {
+                        for runtime in app.down_runtimes() {
+                            if watched.contains(&runtime) {
+                                continue;
+                            }
+                            if let Ok(client) = connect(runtime) {
+                                watched.insert(runtime);
+                                collector.add_runtime(client);
+                            }
+                        }
+                        collector.refresh_all();
+                    }
                 }
             }
 

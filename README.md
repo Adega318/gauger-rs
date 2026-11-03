@@ -103,6 +103,14 @@ Gauger starts the interactive interface and connects to every engine it can find
 
 A non-root process never falls back to the system socket, because that can point at a different Podman instance with different containers. To use it explicitly, set `CONTAINER_HOST=unix:///run/podman/podman.sock`.
 
+#### Connection retry
+
+Gauger retries connecting to each engine with exponential backoff (1s, 2s, 4s … up to 30s,
+capped at five attempts) before giving up on that engine. An unreachable engine does not
+prevent the others from working. In the TUI, press `r` to retry connecting to any engine
+that is still down; engines that were reachable at startup are retried automatically by the
+supervisor when their event stream recovers.
+
 The Podman API socket must be running. For a rootless setup, enable it with:
 
 ```bash
@@ -133,13 +141,13 @@ Each engine snapshot is listed under a `Snapshot of <runtime>:` heading, followe
 
 ### Keybindings
 
-| Key                  | Action                         |
-| -------------------- | ------------------------------ |
-| `j` / `k`, `↓` / `↑` | Move selection                 |
-| `g` / `G`            | Jump to first / last container |
-| `Ctrl+u` / `Ctrl+d`  | Page up / down                 |
-| `r`                  | Refresh container lists        |
-| `q`, `Ctrl+c`        | Quit                           |
+| Key                  | Action                                           |
+| -------------------- | ------------------------------------------------ |
+| `j` / `k`, `↓` / `↑` | Move selection                                   |
+| `g` / `G`            | Jump to first / last container                   |
+| `Ctrl+u` / `Ctrl+d`  | Page up / down                                   |
+| `r`                  | Refresh lists; retry connecting to down runtimes |
+| `q`, `Ctrl+c`        | Quit                                             |
 
 ### Exit codes
 
