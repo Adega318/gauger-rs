@@ -46,7 +46,7 @@ pub(super) async fn forward_event(
 }
 
 async fn enrich_health(client: &RuntimeClient, event: &mut ContainerEvent) {
-    if !matches!(&event.action, Action::Health(Health::Unknown)) {
+    if !matches!(&event.action, Action::Health(Health::Empty)) {
         return;
     }
 

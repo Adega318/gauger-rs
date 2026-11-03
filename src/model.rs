@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt::{Display, Formatter};
 
 use bollard::plugin::{
     ContainerSummary, ContainerSummaryHealthStatusEnum, ContainerSummaryStateEnum, HealthStatusEnum,
@@ -24,9 +24,8 @@ pub enum Health {
     Starting,
     Healthy,
     Unhealthy,
-    Empty,
     #[default]
-    Unknown,
+    Empty,
 }
 
 impl From<Option<ContainerSummaryHealthStatusEnum>> for Health {
@@ -35,8 +34,9 @@ impl From<Option<ContainerSummaryHealthStatusEnum>> for Health {
             Some(ContainerSummaryHealthStatusEnum::STARTING) => Self::Starting,
             Some(ContainerSummaryHealthStatusEnum::HEALTHY) => Self::Healthy,
             Some(ContainerSummaryHealthStatusEnum::UNHEALTHY) => Self::Unhealthy,
-            Some(ContainerSummaryHealthStatusEnum::EMPTY) => Self::Empty,
-            Some(ContainerSummaryHealthStatusEnum::NONE) | None => Self::Unknown,
+            Some(ContainerSummaryHealthStatusEnum::EMPTY)
+            | Some(ContainerSummaryHealthStatusEnum::NONE)
+            | None => Self::Empty,
         }
     }
 }
@@ -47,8 +47,7 @@ impl From<Option<HealthStatusEnum>> for Health {
             Some(HealthStatusEnum::STARTING) => Self::Starting,
             Some(HealthStatusEnum::HEALTHY) => Self::Healthy,
             Some(HealthStatusEnum::UNHEALTHY) => Self::Unhealthy,
-            Some(HealthStatusEnum::EMPTY) => Self::Empty,
-            Some(HealthStatusEnum::NONE) | None => Self::Unknown,
+            Some(HealthStatusEnum::EMPTY) | Some(HealthStatusEnum::NONE) | None => Self::Empty,
         }
     }
 }
@@ -59,7 +58,7 @@ impl From<&str> for Health {
             "starting" => Self::Starting,
             "healthy" => Self::Healthy,
             "unhealthy" => Self::Unhealthy,
-            _ => Self::Unknown,
+            _ => Self::Empty,
         }
     }
 }
@@ -71,24 +70,22 @@ impl Display for Health {
             Self::Unhealthy => "unhealthy",
             Self::Starting => "starting",
             Self::Empty => "-",
-            Self::Unknown => "unknown",
         })
     }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum State {
+    Created,
     Running,
     Paused,
-    Exited,
-    Created,
     Restarting,
     Removing,
+    Exited,
     Dead,
     Stopping,
-    Empty,
     #[default]
-    Unknown,
+    Empty,
 }
 
 impl From<Option<ContainerSummaryStateEnum>> for State {
@@ -105,7 +102,7 @@ impl From<Option<ContainerSummaryStateEnum>> for State {
                 ContainerSummaryStateEnum::STOPPING => Self::Stopping,
                 ContainerSummaryStateEnum::EMPTY => Self::Empty,
             },
-            None => Self::Unknown,
+            None => Self::Empty,
         }
     }
 }
@@ -122,7 +119,6 @@ impl Display for State {
             Self::Dead => "dead",
             Self::Stopping => "stopping",
             Self::Empty => "empty",
-            Self::Unknown => "unknown",
         })
     }
 }
@@ -173,34 +169,38 @@ pub enum Action {
     Start,
     Stop,
     Die,
+    Kill,
+    Restart,
     Pause,
     Unpause,
-    Restart,
-    Remove,
-    Rename,
+    Destroy,
     Oom,
+    Rename,
+    Update,
     Health(Health),
     Unknown(String),
 }
 
 impl From<&str> for Action {
-    fn from(action: &str) -> Self {
-        match action {
+    fn from(value: &str) -> Self {
+        match value {
             "create" => Self::Create,
             "start" => Self::Start,
-            "stop" | "kill" => Self::Stop,
+            "stop" => Self::Stop,
             "die" | "died" | "exited" => Self::Die,
+            "kill" => Self::Kill,
+            "restart" => Self::Restart,
             "pause" => Self::Pause,
             "unpause" => Self::Unpause,
-            "restart" => Self::Restart,
-            "destroy" | "remove" => Self::Remove,
-            "rename" => Self::Rename,
+            "destroy" => Self::Destroy,
             "oom" => Self::Oom,
-            "health_status" => Self::Health(Health::Unknown),
+            "health_status" => Self::Health(Health::Empty),
             action if let Some(status) = action.strip_prefix("health_status: ") => {
                 Self::Health(Health::from(status))
             }
-            other => Self::Unknown(other.to_owned()),
+            "rename" => Self::Rename,
+            "update" => Self::Update,
+            action => Self::Unknown(action.to_owned()),
         }
     }
 }
@@ -212,21 +212,23 @@ impl From<String> for Action {
 }
 
 impl Display for Action {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Unknown(action) => write!(f, "unknown: {action}"),
-            Self::Health(health) => write!(f, "health({health})"),
-            Self::Create => f.write_str("create"),
-            Self::Start => f.write_str("start"),
-            Self::Stop => f.write_str("stop"),
-            Self::Die => f.write_str("die"),
-            Self::Pause => f.write_str("pause"),
-            Self::Unpause => f.write_str("unpause"),
-            Self::Restart => f.write_str("restart"),
-            Self::Remove => f.write_str("remove"),
-            Self::Rename => f.write_str("rename"),
-            Self::Oom => f.write_str("oom"),
-        }
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Create => "create",
+            Self::Start => "start",
+            Self::Stop => "stop",
+            Self::Die => "die",
+            Self::Kill => "kill",
+            Self::Restart => "restart",
+            Self::Pause => "pause",
+            Self::Unpause => "unpause",
+            Self::Destroy => "destroy",
+            Self::Oom => "oom",
+            Self::Rename => "rename",
+            Self::Update => "update",
+            Self::Health(health) => return write!(f, "health({health})"),
+            Self::Unknown(action) => return write!(f, "unknown: {action}"),
+        })
     }
 }
 
@@ -264,7 +266,6 @@ mod tests {
         assert_eq!(Action::from("pause"), Action::Pause);
         assert_eq!(Action::from("unpause"), Action::Unpause);
         assert_eq!(Action::from("restart"), Action::Restart);
-        assert_eq!(Action::from("destroy"), Action::Remove);
         assert_eq!(Action::from("rename"), Action::Rename);
         assert_eq!(Action::from("oom"), Action::Oom);
     }
@@ -273,8 +274,7 @@ mod tests {
     fn maps_podman_specific_actions() {
         assert_eq!(Action::from("died"), Action::Die);
         assert_eq!(Action::from("exited"), Action::Die);
-        assert_eq!(Action::from("remove"), Action::Remove);
-        assert_eq!(Action::from("kill"), Action::Stop);
+        assert_eq!(Action::from("kill"), Action::Kill);
     }
 
     #[test]
@@ -287,10 +287,7 @@ mod tests {
             Action::from("health_status: unhealthy"),
             Action::Health(Health::Unhealthy)
         );
-        assert_eq!(
-            Action::from("health_status"),
-            Action::Health(Health::Unknown)
-        );
+        assert_eq!(Action::from("health_status"), Action::Health(Health::Empty));
     }
 
     #[test]

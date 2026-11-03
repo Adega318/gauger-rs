@@ -79,7 +79,7 @@ impl App {
                             image: String::new(),
                             runtime: *runtime,
                             state: State::Created,
-                            health: Health::Unknown,
+                            health: Health::Empty,
                         };
 
                         self.containers
@@ -90,7 +90,7 @@ impl App {
                     }
                     Action::Start => {
                         self.set_state(runtime, container_id, State::Running);
-                        self.set_health(runtime, container_id, Health::Unknown);
+                        self.set_health(runtime, container_id, Health::Empty);
                     }
                     Action::Stop => {
                         self.set_state(runtime, container_id, State::Stopping);
@@ -107,9 +107,13 @@ impl App {
                     }
                     Action::Restart => {
                         self.set_state(runtime, container_id, State::Restarting);
-                        self.set_health(runtime, container_id, Health::Unknown);
+                        self.set_health(runtime, container_id, Health::Empty);
                     }
-                    Action::Remove => {
+                    Action::Kill => {
+                        self.set_state(runtime, container_id, State::Exited);
+                        self.set_health(runtime, container_id, Health::Empty);
+                    }
+                    Action::Destroy => {
                         if let Some(containers) = self.containers.get_mut(runtime) {
                             containers.remove(container_id);
                         }
@@ -128,6 +132,7 @@ impl App {
                         self.set_state(runtime, container_id, State::Exited);
                         self.set_health(runtime, container_id, Health::Empty);
                     }
+                    Action::Update => {}
                     Action::Health(health) => {
                         if health == Health::Healthy {
                             self.set_state(runtime, container_id, State::Running);
@@ -349,7 +354,7 @@ mod tests {
         }))
         .unwrap();
 
-        assert_container(&app, Runtime::Docker, "c1", State::Created, Health::Unknown);
+        assert_container(&app, Runtime::Docker, "c1", State::Created, Health::Empty);
         assert_eq!(app.containers[&Runtime::Docker]["c1"].name, "name-c1");
     }
 
@@ -372,12 +377,12 @@ mod tests {
     #[test]
     fn lifecycle_actions_update_state_and_health() {
         let cases = [
-            (Action::Start, State::Running, Health::Unknown),
+            (Action::Start, State::Running, Health::Empty),
             (Action::Stop, State::Stopping, Health::Healthy),
             (Action::Die, State::Exited, Health::Empty),
             (Action::Pause, State::Paused, Health::Healthy),
             (Action::Unpause, State::Running, Health::Healthy),
-            (Action::Restart, State::Restarting, Health::Unknown),
+            (Action::Restart, State::Restarting, Health::Empty),
             (Action::Oom, State::Exited, Health::Empty),
         ];
 
@@ -392,10 +397,10 @@ mod tests {
     }
 
     #[test]
-    fn remove_removes_container() {
+    fn destroy_removes_container() {
         let mut app = app_with(Runtime::Docker, vec![container(Runtime::Docker, "c1")]);
 
-        app.apply_event(event(Runtime::Docker, "c1", Action::Remove))
+        app.apply_event(event(Runtime::Docker, "c1", Action::Destroy))
             .unwrap();
 
         assert!(!app.containers[&Runtime::Docker].contains_key("c1"));

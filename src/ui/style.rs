@@ -58,7 +58,7 @@ pub fn state(state: State) -> Style {
         State::Exited | State::Dead => danger(),
         State::Paused | State::Stopping | State::Removing => muted(),
         State::Created | State::Restarting => warning(),
-        State::Empty | State::Unknown => muted(),
+        State::Empty => muted(),
     }
 }
 
@@ -67,7 +67,7 @@ pub fn health(health: Health) -> Style {
         Health::Healthy => success(),
         Health::Unhealthy => danger(),
         Health::Starting => warning(),
-        Health::Empty | Health::Unknown => muted(),
+        Health::Empty => muted(),
     }
 }
 
