@@ -10,6 +10,12 @@ pub enum Runtime {
     Podman,
 }
 
+impl Runtime {
+    pub const fn all() -> &'static [Self] {
+        &[Self::Docker, Self::Podman]
+    }
+}
+
 impl Display for Runtime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.pad(match self {
@@ -173,7 +179,7 @@ pub enum Action {
     Restart,
     Pause,
     Unpause,
-    Destroy,
+    Remove,
     Oom,
     Rename,
     Update,
@@ -192,7 +198,7 @@ impl From<&str> for Action {
             "restart" => Self::Restart,
             "pause" => Self::Pause,
             "unpause" => Self::Unpause,
-            "destroy" => Self::Destroy,
+            "remove" | "destroy" => Self::Remove,
             "oom" => Self::Oom,
             "health_status" => Self::Health(Health::Empty),
             action if let Some(status) = action.strip_prefix("health_status: ") => {
@@ -222,7 +228,7 @@ impl Display for Action {
             Self::Restart => "restart",
             Self::Pause => "pause",
             Self::Unpause => "unpause",
-            Self::Destroy => "destroy",
+            Self::Remove => "remove",
             Self::Oom => "oom",
             Self::Rename => "rename",
             Self::Update => "update",

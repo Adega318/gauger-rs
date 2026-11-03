@@ -113,7 +113,7 @@ impl App {
                         self.set_state(runtime, container_id, State::Exited);
                         self.set_health(runtime, container_id, Health::Empty);
                     }
-                    Action::Destroy => {
+                    Action::Remove => {
                         if let Some(containers) = self.containers.get_mut(runtime) {
                             containers.remove(container_id);
                         }
@@ -400,7 +400,7 @@ mod tests {
     fn destroy_removes_container() {
         let mut app = app_with(Runtime::Docker, vec![container(Runtime::Docker, "c1")]);
 
-        app.apply_event(event(Runtime::Docker, "c1", Action::Destroy))
+        app.apply_event(event(Runtime::Docker, "c1", Action::Remove))
             .unwrap();
 
         assert!(!app.containers[&Runtime::Docker].contains_key("c1"));
