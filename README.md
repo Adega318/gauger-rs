@@ -8,7 +8,7 @@ Gauger connects to the Docker and Podman engines on your machine, shows every co
 
 - Docker and Podman side by side in one table, with automatic socket discovery
 - Live updates from the engine event streams, with no manual polling
-- Per-container ID, name, runtime, state, and health and detailed view
+- Per-container ID, name, runtime, state, and health in the table, plus a detailed view with the image
 - Plain-text mode (`--no-tui`) that streams container listings and lifecycle events to stdout for piping
 
 ## Roadmap
@@ -17,6 +17,7 @@ Gauger connects to the Docker and Podman engines on your machine, shows every co
 - [x] Interactive terminal interface (basic)
 - [ ] Container filtering and sorting
 - [x] Plain-text output mode
+- [x] Per-container detail view
 - [ ] Live resource usage (CPU, memory, network, disk I/O)
 - [ ] Resource usage statistics and history
 - [ ] Compose project support
@@ -104,12 +105,18 @@ A non-root process never falls back to the system socket, because that can point
 
 #### Connection retry
 
-In the TUI, press `r` to retry connecting to any engine that is down.
+In the TUI, press `r` to refresh all containers and retry connecting to any engine that is down.
 
 #### Windows
 
 - **Docker Desktop** exposes its API over the named pipe `\\.\pipe\docker_engine`. Gauger connects to it automatically via `DOCKER_HOST` defaults; no configuration is needed.
 - **Podman for Windows** exposes its API over `\\.\pipe\podman`. Gauger tries that pipe by default. You can also point Gauger at a different pipe with `CONTAINER_HOST=npipe://\\.\pipe\podman`.
+
+### Detail view
+
+With the table focused, press `Enter` to open the detail view for the selected container. It shows the container's ID, name, image, runtime, state, and health.
+
+While the detail view is open, most keys are ignored. Press `q` to close the detail view and return to the table, or `Ctrl+c` to quit at any time.
 
 ### Plain-text mode
 
@@ -122,11 +129,13 @@ gauger --no-tui
 ```text
 Snapshot of docker:
   postgres (05ae208348f4) (docker) [running] (healthy)
+Container: docker: postgres (05ae208348f4) - start
 up: docker
 down: docker, connection refused
+Snapshot of podman: (empty)
 ```
 
-Each engine snapshot is listed under a `Snapshot of <runtime>:` heading, followed by one line per container. Lifecycle events and runtime up/down transitions are printed as they occur. All output goes to stdout. The command runs until interrupted with `Ctrl+C` or `SIGTERM`.
+Each engine snapshot is listed under a `Snapshot of <runtime>:` heading, followed by one line per container (or `(empty)` when there are none). Container lifecycle events are printed as `Container: <runtime>: <name> (<id>) - <action>`. Runtime up/down transitions are printed as `up: <runtime>` and `down: <runtime>, <reason>`. All output goes to stdout. The command runs until interrupted with `Ctrl+C` or `SIGTERM`.
 
 ### Keybindings
 
@@ -136,8 +145,9 @@ Each engine snapshot is listed under a `Snapshot of <runtime>:` heading, followe
 | `g` / `G`            | Jump to first / last container                   |
 | `Ctrl+u` / `Ctrl+d`  | Page up / down                                   |
 | `r`                  | Refresh lists; retry connecting to down runtimes |
-| Enter                | Selection details                                |
-| `q`, `Ctrl+c`        | Quit                                             |
+| Enter                | Open the selected container's detail view        |
+| `q`                  | Close the detail view when open, otherwise quit  |
+| `Ctrl+c`             | Quit                                             |
 
 ### Exit codes
 
@@ -205,10 +215,14 @@ The release and nix jobs are not supported for local testing.
 | Path              | Purpose                                                                        |
 | ----------------- | ------------------------------------------------------------------------------ |
 | `flake.nix`       | Nix package and development shell                                              |
+| `src/main.rs`     | Application entry point: argument parsing, runtime connection, mode dispatch   |
+| `src/cli.rs`      | Command-line argument parsing (`--no-tui`, `-h`, `-V`)                         |
+| `src/error.rs`    | Error types and exit codes                                                     |
+| `src/model.rs`    | Shared data models: containers, runtime, state, health, actions                |
 | `src/runtime/`    | Docker and Podman clients built on [bollard](https://crates.io/crates/bollard) |
 | `src/collector/`  | Per-engine background tasks: snapshots, event streams, reconnects              |
 | `src/app/`        | TUI state: selection, navigation, input handling                               |
-| `src/ui/`         | [ratatui](https://ratatui.rs) rendering: container table                       |
+| `src/ui/`         | [ratatui](https://ratatui.rs) rendering: container table and detail view       |
 | `src/headless.rs` | Plain-text output mode                                                         |
 
 ## License
