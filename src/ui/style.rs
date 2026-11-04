@@ -39,6 +39,13 @@ pub fn selected() -> Style {
     Style::default().bg(Color::Rgb(38, 43, 58))
 }
 
+pub fn project() -> Style {
+    Style::default()
+        .fg(Color::Rgb(203, 213, 225))
+        .bg(Color::Rgb(51, 65, 85))
+        .add_modifier(Modifier::BOLD)
+}
+
 // Status
 pub fn success() -> Style {
     Style::default().fg(Color::Green)

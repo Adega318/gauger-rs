@@ -82,6 +82,7 @@ impl App {
                             runtime: *runtime,
                             state: State::Created,
                             health: Health::Empty,
+                            compose_project: None,
                         };
 
                         self.containers
@@ -184,20 +185,27 @@ impl App {
 
     fn rebuild_visible(&mut self) {
         let selected = self.visible.get(self.selected).cloned();
-        let mut rows: Vec<(&str, Runtime, &str)> = self
+
+        let mut rows: Vec<(&str, Runtime, &str, &str)> = self
             .containers
             .iter()
             .flat_map(|(runtime, containers)| {
-                containers
-                    .values()
-                    .map(move |c| (c.name.as_str(), *runtime, c.id.as_str()))
+                containers.values().map(move |c| {
+                    (
+                        c.name.as_str(),
+                        *runtime,
+                        c.id.as_str(),
+                        c.compose_project.as_deref().unwrap_or(""),
+                    )
+                })
             })
             .collect();
-        rows.sort();
+
+        rows.sort_by(|a, b| a.3.cmp(b.3).then_with(|| a.0.cmp(b.0)));
 
         self.visible = rows
             .into_iter()
-            .map(|(_, runtime, id)| (runtime, id.to_owned()))
+            .map(|(_, runtime, id, _)| (runtime, id.to_owned()))
             .collect();
 
         self.selected = selected
@@ -222,16 +230,27 @@ impl App {
         (*runtime, container)
     }
 
-    pub fn container_rows(&self) -> Vec<(Runtime, &Container)> {
-        self.visible
-            .iter()
-            .filter_map(|(runtime, id)| {
-                self.containers
-                    .get(runtime)
-                    .and_then(|containers| containers.get(id))
-                    .map(|container| (*runtime, container))
-            })
-            .collect()
+    pub fn container_rows(&self) -> Vec<(String, Vec<(Runtime, &Container)>)> {
+        let mut projects: HashMap<String, Vec<(Runtime, &Container)>> = HashMap::new();
+
+        for (runtime, id) in &self.visible {
+            if let Some(container) = self
+                .containers
+                .get(runtime)
+                .and_then(|containers| containers.get(id))
+            {
+                let project = container.compose_project.clone().unwrap_or_default();
+
+                projects
+                    .entry(project)
+                    .or_default()
+                    .push((*runtime, container));
+            }
+        }
+
+        let mut result: Vec<(String, Vec<(Runtime, &Container)>)> = projects.into_iter().collect();
+        result.sort_by(|a, b| a.0.cmp(&b.0));
+        result
     }
 
     pub fn runtimes(&self) -> Vec<(Runtime, RuntimeStatus)> {
@@ -275,6 +294,7 @@ mod tests {
             runtime,
             state: State::Exited,
             health: Health::Healthy,
+            compose_project: None,
         }
     }
 

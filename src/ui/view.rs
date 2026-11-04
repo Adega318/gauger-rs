@@ -68,25 +68,40 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 fn render_table(frame: &mut Frame, area: Rect, app: &App, table_state: &mut TableState) {
-    let rows = app
-        .container_rows()
-        .into_iter()
-        .map(|(runtime, container)| {
-            Row::new([
+    let projects = app.container_rows();
+
+    let mut rows: Vec<Row> = Vec::new();
+    let mut selected_row = None;
+    let mut container_index = 0;
+
+    for (project, containers) in projects {
+        if !project.is_empty() {
+            rows.push(Row::new([Cell::from(format!("▸ {}", project))]).style(style::project()));
+        }
+
+        for (runtime, container) in containers {
+            if container_index == app.selected {
+                selected_row = Some(rows.len());
+            }
+
+            rows.push(Row::new([
                 Cell::from(runtime.to_string()).style(style::runtime(runtime)),
                 Cell::from(container.name.clone()).style(style::bold()),
                 Cell::from(container.id.clone()).style(style::muted()),
                 Cell::from(container.state.to_string()).style(style::state(container.state)),
                 Cell::from(container.health.to_string()).style(style::health(container.health)),
-            ])
-        });
+            ]));
+
+            container_index += 1;
+        }
+    }
 
     let widths = [
-        Constraint::Length(10), // Runtime
-        Constraint::Min(20),    // Name
-        Constraint::Length(12), // ID
-        Constraint::Length(10), // State
-        Constraint::Length(10), // Health
+        Constraint::Length(10),
+        Constraint::Min(20),
+        Constraint::Length(12),
+        Constraint::Length(10),
+        Constraint::Length(10),
     ];
 
     let table = Table::new(rows, widths)
@@ -99,9 +114,7 @@ fn render_table(frame: &mut Frame, area: Rect, app: &App, table_state: &mut Tabl
         .row_highlight_style(style::selected())
         .highlight_symbol(Span::styled("› ", style::highlight()));
 
-    table_state.select(
-        (app.visible_len() > 0).then_some(app.selected.min(app.visible_len().saturating_sub(1))),
-    );
+    table_state.select(selected_row);
 
     frame.render_stateful_widget(table, area, table_state);
 }

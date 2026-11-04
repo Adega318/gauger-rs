@@ -10,6 +10,7 @@ Gauger connects to the Docker and Podman engines on your machine, shows every co
 - Live updates from the engine event streams, with no manual polling
 - Per-container ID, name, runtime, state, and health in the table, plus a detailed view with the image
 - Plain-text mode (`--no-tui`) that streams container listings and lifecycle events to stdout for piping
+- Compose project support
 
 ## Roadmap
 
@@ -20,7 +21,7 @@ Gauger connects to the Docker and Podman engines on your machine, shows every co
 - [x] Per-container detail view
 - [ ] Live resource usage (CPU, memory, network, disk I/O)
 - [ ] Resource usage statistics and history
-- [ ] Compose project support
+- [x] Compose project support
 
 _Gauger is under active development. Planned features may not be implemented yet._
 

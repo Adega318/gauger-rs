@@ -137,6 +137,7 @@ pub struct Container {
     pub runtime: Runtime,
     pub state: State,
     pub health: Health,
+    pub compose_project: Option<String>,
 }
 
 impl Container {
@@ -155,6 +156,11 @@ impl Container {
             runtime,
             state: State::from(container.state),
             health: Health::from(container.health.and_then(|health| health.status)),
+            compose_project: container
+                .labels
+                .unwrap_or_default()
+                .get("com.docker.compose.project")
+                .cloned(),
         }
     }
 }
@@ -165,7 +171,13 @@ impl Display for Container {
             f,
             "{} ({}) [{}] - {} ({})",
             self.name, self.id, self.runtime, self.state, self.health,
-        )
+        )?;
+
+        if let Some(project) = self.compose_project.clone() {
+            write!(f, " - compose: {}", project)?;
+        }
+
+        Ok(())
     }
 }
 
