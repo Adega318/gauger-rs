@@ -186,6 +186,7 @@ mod tests {
             runtime: Runtime::Docker,
             state: State::Running,
             health: Health::Healthy,
+            compose_project: None,
         }
     }
 
