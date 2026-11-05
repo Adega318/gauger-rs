@@ -70,13 +70,13 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
 fn render_table(frame: &mut Frame, area: Rect, app: &App, table_state: &mut TableState) {
     let projects = app.container_rows();
 
-    let mut rows: Vec<Row> = Vec::new();
+    let mut rows = Vec::new();
     let mut selected_row = None;
     let mut container_index = 0;
 
     for (project, containers) in projects {
         if !project.is_empty() {
-            rows.push(Row::new([Cell::from(format!("▸ {}", project))]).style(style::project()));
+            rows.push(Row::new([Cell::from(format!("▸ {project}"))]).style(style::project()));
         }
 
         for (runtime, container) in containers {
@@ -113,6 +113,10 @@ fn render_table(frame: &mut Frame, area: Rect, app: &App, table_state: &mut Tabl
         .column_spacing(2)
         .row_highlight_style(style::selected())
         .highlight_symbol(Span::styled("› ", style::highlight()));
+
+    if app.selected == 0 {
+        *table_state.offset_mut() = 0;
+    }
 
     table_state.select(selected_row);
 
