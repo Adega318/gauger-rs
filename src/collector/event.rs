@@ -1,4 +1,4 @@
-use crate::model::{Container, ContainerEvent, Runtime};
+use crate::model::{Container, ContainerEvent, ResourceUsage, Runtime};
 
 #[derive(Debug)]
 pub enum CollectorEvent {
@@ -7,6 +7,10 @@ pub enum CollectorEvent {
         containers: Vec<Container>,
     },
     Container(ContainerEvent),
+    Stats {
+        runtime: Runtime,
+        samples: Vec<(String, ResourceUsage)>,
+    },
     RuntimeUp {
         runtime: Runtime,
     },

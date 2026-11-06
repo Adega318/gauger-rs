@@ -30,6 +30,7 @@ pub async fn run_headless(clients: Vec<RuntimeClient>) -> Result<(), GaugerError
                     CollectorEvent::Container(event) => {
                         println!("Container: {}", event);
                     }
+                    CollectorEvent::Stats { .. } => {}
                     CollectorEvent::RuntimeUp { runtime } => {
                         println!("up: {}", runtime)
                     }

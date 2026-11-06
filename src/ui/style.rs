@@ -69,6 +69,16 @@ pub fn state(state: State) -> Style {
     }
 }
 
+pub fn usage_percent(percent: f32) -> Style {
+    if percent >= 80.0 {
+        danger()
+    } else if percent >= 50.0 {
+        warning()
+    } else {
+        normal()
+    }
+}
+
 pub fn health(health: Health) -> Style {
     match health {
         Health::Healthy => success(),

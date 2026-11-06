@@ -1,5 +1,8 @@
 pub mod display;
 pub mod from;
+pub mod stats;
+
+pub use stats::{ResourceUsage, StatsCounters};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Runtime {

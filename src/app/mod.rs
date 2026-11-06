@@ -1,7 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::time::{Duration, Instant};
 
 use crate::collector::CollectorEvent;
-use crate::model::{Action, Container, Health, Runtime, State};
+use crate::model::{Action, Container, Health, ResourceUsage, Runtime, State};
 
 use self::error::AppError;
 
@@ -19,10 +20,13 @@ pub enum Effect {
     Refresh,
 }
 
+const STATS_STALE_AFTER: Duration = Duration::from_secs(5);
+
 #[derive(Debug)]
 pub struct App {
     runtimes: HashMap<Runtime, RuntimeStatus>,
     containers: HashMap<Runtime, HashMap<String, Container>>,
+    usage: HashMap<Runtime, HashMap<String, ResourceUsage>>,
     visible: Vec<(Runtime, String)>,
     pub selected: usize,
     pub show_detail: bool,
@@ -39,6 +43,7 @@ impl App {
                 .map(|runtime| (runtime, RuntimeStatus::Down))
                 .collect(),
             containers: HashMap::new(),
+            usage: HashMap::new(),
             visible: Vec::new(),
             selected: 0,
             show_detail: false,
@@ -53,21 +58,34 @@ impl App {
             self.effects.push(Effect::Refresh);
             self.scheduled_sync = false;
         }
+
+        self.expire_usage();
     }
 
     pub fn apply_event(&mut self, collector_event: CollectorEvent) -> Result<(), AppError> {
+        let mut rebuild = true;
+
         match collector_event {
             CollectorEvent::Snapshot {
                 runtime,
                 containers,
             } => {
+                let running: HashSet<String> = containers
+                    .iter()
+                    .filter(|container| container.state == State::Running)
+                    .map(|container| container.id.clone())
+                    .collect();
+
+                if let Some(usage) = self.usage.get_mut(&runtime) {
+                    usage.retain(|id, _| running.contains(id));
+                }
+
                 let containers = containers
                     .into_iter()
                     .map(|container| (container.id.clone(), container))
                     .collect();
 
                 self.containers.insert(runtime, containers);
-                self.rebuild_visible();
             }
             CollectorEvent::Container(container_event) => {
                 let runtime = &container_event.runtime;
@@ -94,16 +112,20 @@ impl App {
                     Action::Start => {
                         self.set_state(runtime, container_id, State::Running);
                         self.set_health(runtime, container_id, Health::Empty);
+                        self.clear_usage(runtime, container_id);
                     }
                     Action::Stop => {
                         self.set_state(runtime, container_id, State::Stopping);
+                        self.clear_usage(runtime, container_id);
                     }
                     Action::Die => {
                         self.set_state(runtime, container_id, State::Exited);
                         self.set_health(runtime, container_id, Health::Empty);
+                        self.clear_usage(runtime, container_id);
                     }
                     Action::Pause => {
                         self.set_state(runtime, container_id, State::Paused);
+                        self.clear_usage(runtime, container_id);
                     }
                     Action::Unpause => {
                         self.set_state(runtime, container_id, State::Running);
@@ -111,15 +133,18 @@ impl App {
                     Action::Restart => {
                         self.set_state(runtime, container_id, State::Restarting);
                         self.set_health(runtime, container_id, Health::Empty);
+                        self.clear_usage(runtime, container_id);
                     }
                     Action::Kill => {
                         self.set_state(runtime, container_id, State::Exited);
                         self.set_health(runtime, container_id, Health::Empty);
+                        self.clear_usage(runtime, container_id);
                     }
                     Action::Remove => {
                         if let Some(containers) = self.containers.get_mut(runtime) {
                             containers.remove(container_id);
                         }
+                        self.clear_usage(runtime, container_id);
                     }
                     Action::Rename => {
                         if let Some(name) = &container_event.name
@@ -134,6 +159,7 @@ impl App {
                     Action::Oom => {
                         self.set_state(runtime, container_id, State::Exited);
                         self.set_health(runtime, container_id, Health::Empty);
+                        self.clear_usage(runtime, container_id);
                     }
                     Action::Update => {}
                     Action::Health(health) => {
@@ -145,16 +171,53 @@ impl App {
                     Action::Unknown(_) => {}
                 }
             }
+            CollectorEvent::Stats { runtime, samples } => {
+                let usage = self.usage.entry(runtime).or_default();
+
+                for (id, sample) in samples {
+                    usage.insert(id, sample);
+                }
+
+                rebuild = false;
+            }
             CollectorEvent::RuntimeUp { runtime } => {
                 self.runtimes.insert(runtime, RuntimeStatus::Up);
             }
             CollectorEvent::RuntimeDown { runtime, .. } => {
                 self.runtimes.insert(runtime, RuntimeStatus::Down);
+                self.usage.remove(&runtime);
             }
         }
 
-        self.rebuild_visible();
+        if rebuild {
+            self.rebuild_visible();
+        }
+
         Ok(())
+    }
+
+    fn clear_usage(&mut self, runtime: &Runtime, container_id: &str) {
+        if let Some(usage) = self.usage.get_mut(runtime) {
+            usage.remove(container_id);
+        }
+    }
+
+    fn expire_usage(&mut self) {
+        let now = Instant::now();
+
+        for usage in self.usage.values_mut() {
+            usage.retain(|_, sample| {
+                now.saturating_duration_since(sample.sampled_at) <= STATS_STALE_AFTER
+            });
+        }
+
+        self.usage.retain(|_, usage| !usage.is_empty());
+    }
+
+    pub fn usage(&self, runtime: Runtime, container_id: &str) -> Option<&ResourceUsage> {
+        self.usage
+            .get(&runtime)
+            .and_then(|usage| usage.get(container_id))
     }
 
     fn set_state(&mut self, runtime: &Runtime, container_id: &str, state: State) {
@@ -315,6 +378,32 @@ mod tests {
             name: None,
             action,
         })
+    }
+
+    fn usage() -> ResourceUsage {
+        ResourceUsage {
+            cpu_percent: Some(12.5),
+            memory_used: 100,
+            memory_limit: 200,
+            memory_percent: Some(50.0),
+            network_rx_bytes: 10,
+            network_tx_bytes: 20,
+            network_rx_rate: Some(1),
+            network_tx_rate: Some(2),
+            block_read_bytes: 30,
+            block_write_bytes: 40,
+            block_read_rate: Some(3),
+            block_write_rate: Some(4),
+            pids: Some(5),
+            sampled_at: Instant::now(),
+        }
+    }
+
+    fn stats_event(runtime: Runtime, id: &str) -> CollectorEvent {
+        CollectorEvent::Stats {
+            runtime,
+            samples: vec![(id.to_owned(), usage())],
+        }
     }
 
     fn assert_container(app: &App, runtime: Runtime, id: &str, state: State, health: Health) {
@@ -511,6 +600,96 @@ mod tests {
         let result = app.apply_event(event(Runtime::Docker, "missing", Action::Start));
         assert!(result.is_ok());
         assert!(!app.containers.contains_key(&Runtime::Docker));
+    }
+
+    #[test]
+    fn stats_event_stores_usage() {
+        let mut app = app_with(Runtime::Docker, vec![container(Runtime::Docker, "c1")]);
+
+        app.apply_event(stats_event(Runtime::Docker, "c1")).unwrap();
+
+        let usage = app.usage(Runtime::Docker, "c1").unwrap();
+        assert_eq!(usage.cpu_percent, Some(12.5));
+        assert_eq!(usage.memory_used, 100);
+    }
+
+    #[test]
+    fn snapshot_prunes_usage_for_containers_that_are_no_longer_running() {
+        let mut app = app_with(Runtime::Docker, vec![container(Runtime::Docker, "c1")]);
+        app.apply_event(stats_event(Runtime::Docker, "c1")).unwrap();
+        app.apply_event(stats_event(Runtime::Docker, "gone"))
+            .unwrap();
+
+        let mut running = container(Runtime::Docker, "c1");
+        running.state = State::Running;
+
+        app.apply_event(CollectorEvent::Snapshot {
+            runtime: Runtime::Docker,
+            containers: vec![running],
+        })
+        .unwrap();
+
+        assert!(app.usage(Runtime::Docker, "c1").is_some());
+        assert!(app.usage(Runtime::Docker, "gone").is_none());
+    }
+
+    #[test]
+    fn lifecycle_events_clear_usage() {
+        for action in [
+            Action::Start,
+            Action::Stop,
+            Action::Pause,
+            Action::Die,
+            Action::Kill,
+            Action::Oom,
+            Action::Remove,
+        ] {
+            let mut app = app_with(Runtime::Docker, vec![container(Runtime::Docker, "c1")]);
+            app.apply_event(stats_event(Runtime::Docker, "c1")).unwrap();
+
+            app.apply_event(event(Runtime::Docker, "c1", action.clone()))
+                .unwrap();
+
+            assert!(
+                app.usage(Runtime::Docker, "c1").is_none(),
+                "usage should be cleared after {action:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn runtime_down_clears_usage() {
+        let mut app = app_with(Runtime::Docker, vec![container(Runtime::Docker, "c1")]);
+        app.apply_event(stats_event(Runtime::Docker, "c1")).unwrap();
+
+        app.apply_event(CollectorEvent::RuntimeDown {
+            runtime: Runtime::Docker,
+            reason: "boom".to_owned(),
+        })
+        .unwrap();
+
+        assert!(app.usage(Runtime::Docker, "c1").is_none());
+    }
+
+    #[test]
+    fn stale_usage_expires_on_tick() {
+        let mut app = app_with(Runtime::Docker, vec![container(Runtime::Docker, "c1")]);
+
+        app.apply_event(CollectorEvent::Stats {
+            runtime: Runtime::Docker,
+            samples: vec![(
+                "c1".to_owned(),
+                ResourceUsage {
+                    sampled_at: Instant::now() - STATS_STALE_AFTER - Duration::from_secs(1),
+                    ..usage()
+                },
+            )],
+        })
+        .unwrap();
+
+        app.tick();
+
+        assert!(app.usage(Runtime::Docker, "c1").is_none());
     }
 
     #[test]

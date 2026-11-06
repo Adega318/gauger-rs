@@ -2,13 +2,14 @@
 
 A lightweight Rust terminal UI for monitoring Docker and Podman containers.
 
-Gauger connects to the Docker and Podman engines on your machine, shows every container in a single live table, and keeps it up to date from the engines' event streams. CPU, memory, network, and disk I/O monitoring is the next milestone and is not implemented yet (see [Roadmap](#roadmap)).
+Gauger connects to the Docker and Podman engines on your machine, shows every container in a single live table, and keeps it up to date from the engines' event streams. It also samples running containers for live CPU, memory, network, and block I/O usage.
 
 ## Features
 
 - Docker and Podman side by side in one table, with automatic socket discovery
 - Live updates from the engine event streams, with no manual polling
-- Per-container ID, name, runtime, state, and health in the table, plus a detailed view with the image
+- Live per-container CPU, memory, network, and block I/O usage for running containers
+- Per-container ID, name, runtime, state, and health in the table, plus a detailed view with the image and resource usage
 - Plain-text mode (`--no-tui`) that streams container listings and lifecycle events to stdout for piping
 - Compose project support
 
@@ -19,7 +20,7 @@ Gauger connects to the Docker and Podman engines on your machine, shows every co
 - [ ] Container filtering and sorting
 - [x] Plain-text output mode
 - [x] Per-container detail view
-- [ ] Live resource usage (CPU, memory, network, disk I/O)
+- [x] Live resource usage (CPU, memory, network, disk I/O)
 - [ ] Resource usage statistics and history
 - [x] Compose project support
 
@@ -113,9 +114,21 @@ In the TUI, press `r` to refresh all containers and retry connecting to any engi
 - **Docker Desktop** exposes its API over the named pipe `\\.\pipe\docker_engine`. Gauger connects to it automatically via `DOCKER_HOST` defaults; no configuration is needed.
 - **Podman for Windows** exposes its API over `\\.\pipe\podman`. Gauger tries that pipe by default. You can also point Gauger at a different pipe with `CONTAINER_HOST=npipe://\\.\pipe\podman`.
 
+### Live resource usage
+
+Gauger samples every running container once per second. The table shows CPU, memory, network, and block I/O columns; on narrow terminals the memory, network, and I/O columns are hidden in that order so the table stays readable. The detail view shows the full values, including cumulative network totals.
+
+- CPU is reported as a percentage of one core, so a container using two cores fully shows `200%`.
+- Memory usage excludes inactive page cache, matching `docker stats`.
+- Network and block I/O columns show per-second rates; the detail view also shows cumulative totals.
+- Rates require two samples. The first sample (and the first sample after a container restart or counter reset) shows `—` until the next one arrives.
+- Containers that are not running are not sampled. Values are cleared when a container stops, exits, or is removed, and expire automatically if an engine stops responding.
+
+Plain-text mode ignores resource samples and keeps its existing output.
+
 ### Detail view
 
-With the table focused, press `Enter` to open the detail view for the selected container. It shows the container's ID, name, image, runtime, state, and health.
+With the table focused, press `Enter` to open the detail view for the selected container. It shows the container's ID, name, image, runtime, state, and health, plus live resource usage.
 
 While the detail view is open, most keys are ignored. Press `q` to close the detail view and return to the table, or `Ctrl+c` to quit at any time.
 
@@ -219,9 +232,9 @@ The release and nix jobs are not supported for local testing.
 | `src/main.rs`     | Application entry point: argument parsing, runtime connection, mode dispatch   |
 | `src/cli.rs`      | Command-line argument parsing (`--no-tui`, `-h`, `-V`)                         |
 | `src/error.rs`    | Error types and exit codes                                                     |
-| `src/model.rs`    | Shared data models: containers, runtime, state, health, actions                |
+| `src/model/`      | Shared data models: containers, resources, runtime, state, health, actions     |
 | `src/runtime/`    | Docker and Podman clients built on [bollard](https://crates.io/crates/bollard) |
-| `src/collector/`  | Per-engine background tasks: snapshots, event streams, reconnects              |
+| `src/collector/`  | Per-engine background tasks: snapshots, event streams, stats, reconnects       |
 | `src/app/`        | TUI state: selection, navigation, input handling                               |
 | `src/ui/`         | [ratatui](https://ratatui.rs) rendering: container table and detail view       |
 | `src/headless.rs` | Plain-text output mode                                                         |

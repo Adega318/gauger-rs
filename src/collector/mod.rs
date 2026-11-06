@@ -2,6 +2,7 @@ mod command;
 mod event;
 mod forwarding;
 mod runtime;
+mod stats;
 mod supervisor;
 
 pub use command::CollectorCommand;
@@ -33,11 +34,18 @@ impl Collector {
         let tasks = self
             .clients
             .into_iter()
-            .map(|client| {
+            .flat_map(|client| {
                 let tx = tx.clone();
                 let commands = commands.subscribe();
 
-                tokio::spawn(supervisor::watch_runtime(client, tx, commands))
+                let watcher = tokio::spawn(supervisor::watch_runtime(
+                    client.clone(),
+                    tx.clone(),
+                    commands,
+                ));
+                let stats = tokio::spawn(stats::watch_stats(client, tx));
+
+                [watcher, stats]
             })
             .collect();
 
@@ -71,8 +79,12 @@ impl CollectorHandle {
         let commands = self.commands.subscribe();
 
         self.tasks.push(tokio::spawn(supervisor::watch_runtime(
-            client, tx, commands,
+            client.clone(),
+            tx.clone(),
+            commands,
         )));
+        self.tasks
+            .push(tokio::spawn(stats::watch_stats(client, tx)));
     }
 }
 

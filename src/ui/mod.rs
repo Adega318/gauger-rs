@@ -23,6 +23,7 @@ use self::error::UiError;
 use self::view::render;
 
 pub mod error;
+mod format;
 mod style;
 mod view;
 

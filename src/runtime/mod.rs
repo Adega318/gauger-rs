@@ -2,9 +2,12 @@ use std::collections::HashMap;
 
 use bollard::Docker;
 use bollard::errors::Error;
+use bollard::models::ContainerStatsResponse;
 use bollard::plugin::{EventMessage, EventMessageTypeEnum};
-use bollard::query_parameters::{EventsOptionsBuilder, ListContainersOptionsBuilder};
-use futures_util::stream::BoxStream;
+use bollard::query_parameters::{
+    EventsOptionsBuilder, ListContainersOptionsBuilder, StatsOptionsBuilder,
+};
+use futures_util::stream::{BoxStream, StreamExt};
 
 use crate::model::{Action, Container, ContainerEvent, Health, Runtime};
 
@@ -14,6 +17,7 @@ pub mod docker;
 pub mod error;
 pub mod podman;
 
+#[derive(Clone)]
 pub struct RuntimeClient {
     runtime: Runtime,
     client: Docker,
@@ -40,6 +44,31 @@ impl RuntimeClient {
             .into_iter()
             .map(|container| Container::from_summary(container, self.runtime))
             .collect())
+    }
+
+    /// Fetch a single, immediate stats sample for a container.
+    ///
+    /// `one_shot` avoids Docker's default two-cycle wait; rates are computed
+    /// locally from consecutive samples instead.
+    pub async fn stats_once(&self, id: &str) -> Result<ContainerStatsResponse, RuntimeError> {
+        let options = StatsOptionsBuilder::default()
+            .stream(false)
+            .one_shot(true)
+            .build();
+
+        let mut stream = self.client.stats(id, Some(options));
+
+        match stream.next().await {
+            Some(Ok(stats)) => Ok(stats),
+            Some(Err(err)) => Err(RuntimeError::RequestError {
+                runtime: self.runtime.to_string(),
+                reason: err.to_string(),
+            }),
+            None => Err(RuntimeError::RequestError {
+                runtime: self.runtime.to_string(),
+                reason: "stats stream returned no samples".to_owned(),
+            }),
+        }
     }
 
     pub fn get_event_stream(&self) -> BoxStream<'_, Result<EventMessage, Error>> {
@@ -129,7 +158,36 @@ fn is_noise(action: &Action) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use crate::model::State;
+
     use super::*;
+
+    #[tokio::test]
+    async fn stats_once_returns_a_sample_for_a_running_container() {
+        for runtime in [Runtime::Docker, Runtime::Podman] {
+            let Ok(client) = connect(runtime) else {
+                continue;
+            };
+
+            let Ok(containers) = client.list_containers().await else {
+                continue;
+            };
+
+            let Some(container) = containers
+                .into_iter()
+                .find(|container| container.state == State::Running)
+            else {
+                continue;
+            };
+
+            let stats = client.stats_once(&container.id).await;
+            assert!(
+                stats.is_ok(),
+                "stats request for {runtime:?} container {} should succeed: {stats:?}",
+                container.id
+            );
+        }
+    }
 
     #[test]
     fn connect_succeeds_for_reachable_runtime() {
