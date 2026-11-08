@@ -26,26 +26,36 @@ pub(crate) fn render(frame: &mut Frame, app: &App, table_state: &mut TableState)
 
     render_header(frame, header_area, app);
     render_table(frame, body_area, app, table_state);
-    render_footer(frame, footer_area);
+    let cursor = render_footer(frame, footer_area, app);
 
-    if app.show_detail {
+    if app.show_detail && app.visible_len() > 0 {
         render_detail(frame, app);
+    }
+
+    if let Some(cursor) = cursor {
+        frame.set_cursor_position(cursor);
     }
 }
 
 fn render_header(frame: &mut Frame, area: Rect, app: &App) {
-    let containers = app.visible_len();
+    let [title_area, filter_area] =
+        Layout::vertical([Constraint::Length(1), Constraint::Length(1)]).areas(area);
+
+    let visible = app.visible_len();
+    let total = app.total_len();
     let runtimes = app.runtimes();
+    let count = if app.is_filtered() {
+        format!("{visible}/{total}")
+    } else {
+        total.to_string()
+    };
 
     let mut spans = vec![
         Span::styled("gauger", style::title()),
         Span::styled(format!(" v{}", env!("CARGO_PKG_VERSION")), style::muted()),
         Span::styled(" │ ", style::muted()),
-        Span::styled(containers.to_string(), style::highlight()),
-        Span::raw(format!(
-            " container{}",
-            if containers == 1 { "" } else { "s" }
-        )),
+        Span::styled(count, style::highlight()),
+        Span::raw(format!(" container{}", if total == 1 { "" } else { "s" })),
         Span::styled(" │ ", style::muted()),
     ];
 
@@ -65,10 +75,42 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
 
     let line = Line::from(spans);
 
+    frame.render_widget(Paragraph::new(line).alignment(Alignment::Left), title_area);
+
+    if app.is_filtered() && !app.is_searching() {
+        render_filter_indicator(frame, filter_area, app);
+    }
+}
+
+fn render_filter_indicator(frame: &mut Frame, area: Rect, app: &App) {
+    let line = Line::from(vec![
+        Span::styled("FILTERED", style::warning()),
+        Span::styled("  name: ", style::muted()),
+        Span::styled(format!("\"{}\"", app.search_query()), style::highlight()),
+        Span::styled(
+            format!("  ·  {}/{} matches", app.visible_len(), app.total_len()),
+            style::muted(),
+        ),
+    ]);
+
     frame.render_widget(Paragraph::new(line).alignment(Alignment::Left), area);
 }
 
 fn render_table(frame: &mut Frame, area: Rect, app: &App, table_state: &mut TableState) {
+    if app.is_filtered() && app.visible_len() == 0 {
+        let [message_area] = Layout::vertical([Constraint::Length(1)])
+            .flex(Flex::Center)
+            .areas(area);
+        let message = Paragraph::new(Line::from(vec![
+            Span::styled("No containers match ", style::muted()),
+            Span::styled(format!("\"{}\"", app.search_query()), style::normal()),
+        ]))
+        .alignment(Alignment::Center);
+
+        frame.render_widget(message, message_area);
+        return;
+    }
+
     let projects = app.container_rows();
 
     let show_memory = area.width >= 76;
@@ -333,24 +375,62 @@ fn render_detail(frame: &mut Frame, app: &App) {
     frame.render_widget(popup, area);
 }
 
-fn render_footer(frame: &mut Frame, area: Rect) {
-    let shortcuts = [
-        ("q", "quit"),
-        ("r", "refresh"),
-        ("enter", "details"),
-        ("g/G", "jump"),
-        ("j/k", "navigate"),
-        ("Ctrl+u/d", "page"),
-    ];
+fn render_footer(frame: &mut Frame, area: Rect, app: &App) -> Option<(u16, u16)> {
+    let (line, cursor) = if app.is_searching() {
+        let mut spans = vec![
+            Span::styled("Search: ", style::header()),
+            Span::styled(app.search_query().to_owned(), style::normal()),
+        ];
+        let cursor_x = area.x.saturating_add(
+            spans
+                .iter()
+                .map(Span::width)
+                .sum::<usize>()
+                .try_into()
+                .unwrap_or(u16::MAX),
+        );
 
-    let spans = shortcut_spans(&shortcuts);
-    let footer = Paragraph::new(Line::from_iter(spans)).block(
+        spans.extend([
+            Span::styled("▏", style::highlight()),
+            Span::styled("  enter apply  esc clear", style::muted()),
+        ]);
+
+        let cursor_x = cursor_x.min(area.right().saturating_sub(1));
+        let cursor_y = area
+            .y
+            .saturating_add(1)
+            .min(area.bottom().saturating_sub(1));
+
+        (Line::from(spans), Some((cursor_x, cursor_y)))
+    } else {
+        let mut shortcuts = vec![
+            ("/", "search"),
+            ("r", "refresh"),
+            ("enter", "details"),
+            ("g/G", "jump"),
+            ("j/k", "navigate"),
+            ("Ctrl+u/d", "page"),
+        ];
+
+        shortcuts.push(if app.show_detail {
+            ("esc", "close")
+        } else if app.is_filtered() {
+            ("esc", "clear search")
+        } else {
+            ("esc", "quit")
+        });
+
+        (Line::from(shortcut_spans(&shortcuts)), None)
+    };
+
+    let footer = Paragraph::new(line).block(
         Block::default()
             .borders(Borders::TOP)
             .border_style(style::border()),
     );
 
     frame.render_widget(footer, area);
+    cursor
 }
 
 fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
@@ -526,5 +606,57 @@ mod tests {
         assert!(!content.contains("MEM"));
         assert!(!content.contains("NET"));
         assert!(!content.contains("I/O"));
+    }
+
+    #[test]
+    fn search_prompt_is_rendered_while_typing() {
+        let mut app = app_with_stats();
+        app.begin_search();
+
+        for character in "dm".chars() {
+            app.push_search_char(character);
+        }
+
+        let content = draw(&app, 120);
+
+        assert!(content.contains("Search: dm"));
+        assert!(!content.contains("FILTERED"));
+        assert!(content.contains("demo"));
+    }
+
+    #[test]
+    fn applied_search_renders_filter_indicator() {
+        let mut app = app_with_stats();
+
+        for character in "dm".chars() {
+            app.push_search_char(character);
+        }
+        app.confirm_search();
+
+        let content = draw(&app, 120);
+
+        assert!(content.contains("FILTERED"));
+        assert!(content.contains("name: \"dm\""));
+        assert!(content.contains("1/1 matches"));
+        assert!(content.contains("esc clear"));
+
+        app.clear_search();
+
+        assert!(!draw(&app, 120).contains("FILTERED"));
+    }
+
+    #[test]
+    fn empty_search_result_renders_a_message() {
+        let mut app = app_with_stats();
+
+        for character in "zzz".chars() {
+            app.push_search_char(character);
+        }
+        app.confirm_search();
+
+        let content = draw(&app, 120);
+
+        assert!(content.contains("FILTERED"));
+        assert!(content.contains("No containers match \"zzz\""));
     }
 }

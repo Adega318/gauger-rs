@@ -8,6 +8,7 @@ use self::error::AppError;
 
 pub mod error;
 pub mod input;
+mod search;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeStatus {
@@ -28,6 +29,8 @@ pub struct App {
     containers: HashMap<Runtime, HashMap<String, Container>>,
     usage: HashMap<Runtime, HashMap<String, ResourceUsage>>,
     visible: Vec<(Runtime, String)>,
+    search: String,
+    searching: bool,
     pub selected: usize,
     pub show_detail: bool,
     effects: Vec<Effect>,
@@ -45,6 +48,8 @@ impl App {
             containers: HashMap::new(),
             usage: HashMap::new(),
             visible: Vec::new(),
+            search: String::new(),
+            searching: false,
             selected: 0,
             show_detail: false,
             effects: Vec::new(),
@@ -248,21 +253,26 @@ impl App {
 
     fn rebuild_visible(&mut self) {
         let selected = self.visible.get(self.selected).cloned();
+        let filtering = self.is_filtered();
 
-        let mut rows: Vec<(&str, Runtime, &str, &str)> = self
-            .containers
-            .iter()
-            .flat_map(|(runtime, containers)| {
-                containers.values().map(move |c| {
-                    (
-                        c.name.as_str(),
-                        *runtime,
-                        c.id.as_str(),
-                        c.compose_project.as_deref().unwrap_or(""),
-                    )
+        let mut rows: Vec<(&str, Runtime, &str, &str)> = {
+            let query = self.search.as_str();
+
+            self.containers
+                .iter()
+                .flat_map(|(runtime, containers)| {
+                    containers.values().map(move |c| {
+                        (
+                            c.name.as_str(),
+                            *runtime,
+                            c.id.as_str(),
+                            c.compose_project.as_deref().unwrap_or(""),
+                        )
+                    })
                 })
-            })
-            .collect();
+                .filter(|(name, _, _, _)| search::matches(query, name))
+                .collect()
+        };
 
         rows.sort_by(|a, b| a.3.cmp(b.3).then_with(|| a.0.cmp(b.0)));
 
@@ -271,9 +281,12 @@ impl App {
             .map(|(_, runtime, id, _)| (runtime, id.to_owned()))
             .collect();
 
-        self.selected = selected
-            .and_then(|key| self.visible.iter().position(|row| *row == key))
-            .unwrap_or_else(|| self.selected.min(self.visible.len().saturating_sub(1)));
+        self.selected =
+            match selected.and_then(|key| self.visible.iter().position(|row| *row == key)) {
+                Some(position) => position,
+                None if filtering => 0,
+                None => self.selected.min(self.visible.len().saturating_sub(1)),
+            };
     }
 
     pub fn container(&self, visible_pos: usize) -> (Runtime, &Container) {
@@ -335,8 +348,54 @@ impl App {
         self.scheduled_sync = true;
     }
 
+    pub fn begin_search(&mut self) {
+        self.searching = true;
+    }
+
+    pub fn confirm_search(&mut self) {
+        self.searching = false;
+    }
+
+    pub fn clear_search(&mut self) {
+        self.searching = false;
+
+        if self.search.is_empty() {
+            return;
+        }
+
+        self.search.clear();
+        self.rebuild_visible();
+    }
+
+    pub fn push_search_char(&mut self, character: char) {
+        self.search.push(character);
+        self.rebuild_visible();
+    }
+
+    pub fn pop_search_char(&mut self) {
+        if self.search.pop().is_some() {
+            self.rebuild_visible();
+        }
+    }
+
+    pub fn is_searching(&self) -> bool {
+        self.searching
+    }
+
+    pub fn is_filtered(&self) -> bool {
+        !self.search.is_empty()
+    }
+
+    pub fn search_query(&self) -> &str {
+        &self.search
+    }
+
     pub fn visible_len(&self) -> usize {
         self.visible.len()
+    }
+
+    pub fn total_len(&self) -> usize {
+        self.containers.values().map(HashMap::len).sum()
     }
 
     pub fn drain_effects(&mut self) -> Vec<Effect> {
@@ -350,9 +409,13 @@ mod tests {
     use crate::model::ContainerEvent;
 
     fn container(runtime: Runtime, id: &str) -> Container {
+        named_container(runtime, id, &format!("name-{id}"))
+    }
+
+    fn named_container(runtime: Runtime, id: &str, name: &str) -> Container {
         Container {
             id: id.to_owned(),
-            name: format!("name-{id}"),
+            name: name.to_owned(),
             image: "image:latest".to_owned(),
             runtime,
             state: State::Exited,
@@ -468,6 +531,139 @@ mod tests {
 
         assert!(app.containers[&Runtime::Docker].contains_key("docker-1"));
         assert!(app.containers[&Runtime::Podman].contains_key("podman-1"));
+    }
+
+    #[test]
+    fn search_filters_visible_containers_by_fuzzy_name() {
+        let mut app = app_with(
+            Runtime::Docker,
+            vec![
+                named_container(Runtime::Docker, "c1", "postgres"),
+                named_container(Runtime::Docker, "c2", "redis"),
+                named_container(Runtime::Docker, "c3", "pgadmin"),
+            ],
+        );
+
+        for character in "pgs".chars() {
+            app.push_search_char(character);
+        }
+
+        assert!(app.is_filtered());
+        assert_eq!(app.visible_len(), 1);
+        assert_eq!(app.total_len(), 3);
+        assert_eq!(app.container(0).1.name, "postgres");
+    }
+
+    #[test]
+    fn search_preserves_selection_when_it_still_matches() {
+        let mut app = app_with(
+            Runtime::Docker,
+            vec![
+                named_container(Runtime::Docker, "c1", "api"),
+                named_container(Runtime::Docker, "c2", "postgres"),
+                named_container(Runtime::Docker, "c3", "web"),
+            ],
+        );
+        app.selected = 1;
+
+        app.push_search_char('e');
+
+        assert_eq!(app.selected, 0);
+        assert_eq!(app.container(app.selected).1.name, "postgres");
+    }
+
+    #[test]
+    fn search_moves_selection_to_first_match_when_it_disappears() {
+        let mut app = app_with(
+            Runtime::Docker,
+            vec![
+                named_container(Runtime::Docker, "c1", "api"),
+                named_container(Runtime::Docker, "c2", "postgres"),
+                named_container(Runtime::Docker, "c3", "web"),
+            ],
+        );
+        app.selected = 2;
+
+        for character in "pos".chars() {
+            app.push_search_char(character);
+        }
+
+        assert_eq!(app.selected, 0);
+        assert_eq!(app.container(app.selected).1.name, "postgres");
+    }
+
+    #[test]
+    fn clearing_search_restores_all_containers() {
+        let mut app = app_with(
+            Runtime::Docker,
+            vec![
+                named_container(Runtime::Docker, "c1", "api"),
+                named_container(Runtime::Docker, "c2", "postgres"),
+            ],
+        );
+
+        app.push_search_char('z');
+
+        assert_eq!(app.visible_len(), 0);
+        assert!(!app.is_searching());
+
+        app.begin_search();
+        app.clear_search();
+
+        assert!(!app.is_filtered());
+        assert!(!app.is_searching());
+        assert_eq!(app.visible_len(), 2);
+    }
+
+    #[test]
+    fn search_applies_to_new_events() {
+        let mut app = app_with(
+            Runtime::Docker,
+            vec![named_container(Runtime::Docker, "c1", "postgres")],
+        );
+
+        for character in "pgs".chars() {
+            app.push_search_char(character);
+        }
+
+        app.apply_event(CollectorEvent::Container(ContainerEvent {
+            runtime: Runtime::Docker,
+            id: "c2".to_owned(),
+            name: Some("pgsidecar".to_owned()),
+            action: Action::Create,
+        }))
+        .unwrap();
+        app.apply_event(CollectorEvent::Container(ContainerEvent {
+            runtime: Runtime::Docker,
+            id: "c3".to_owned(),
+            name: Some("redis".to_owned()),
+            action: Action::Create,
+        }))
+        .unwrap();
+
+        assert_eq!(app.visible_len(), 2);
+    }
+
+    #[test]
+    fn backspacing_search_updates_the_filter() {
+        let mut app = app_with(
+            Runtime::Docker,
+            vec![
+                named_container(Runtime::Docker, "c1", "postgres"),
+                named_container(Runtime::Docker, "c2", "redis"),
+            ],
+        );
+
+        for character in "redisx".chars() {
+            app.push_search_char(character);
+        }
+        assert_eq!(app.visible_len(), 0);
+
+        app.pop_search_char();
+
+        assert_eq!(app.search_query(), "redis");
+        assert_eq!(app.visible_len(), 1);
+        assert_eq!(app.container(0).1.name, "redis");
     }
 
     #[test]

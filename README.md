@@ -10,6 +10,7 @@ Gauger connects to the Docker and Podman engines on your machine, shows every co
 - Live updates from the engine event streams, with no manual polling
 - Live per-container CPU, memory, network, and block I/O usage for running containers
 - Per-container ID, name, runtime, state, and health in the table, plus a detailed view with the image and resource usage
+- Fuzzy search by container name
 - Plain-text mode (`--no-tui`) that streams container listings and lifecycle events to stdout for piping
 - Compose project support
 
@@ -17,14 +18,11 @@ Gauger connects to the Docker and Podman engines on your machine, shows every co
 
 - [x] Docker and Podman support
 - [x] Interactive terminal interface (basic)
-- [ ] Container filtering and sorting
+- [x] Container filtering and sorting
 - [x] Plain-text output mode
 - [x] Per-container detail view
 - [x] Live resource usage (CPU, memory, network, disk I/O)
-- [ ] Resource usage statistics and history
 - [x] Compose project support
-
-_Gauger is under active development. Planned features may not be implemented yet._
 
 ## Installation
 
@@ -130,7 +128,13 @@ Plain-text mode ignores resource samples and keeps its existing output.
 
 With the table focused, press `Enter` to open the detail view for the selected container. It shows the container's ID, name, image, runtime, state, and health, plus live resource usage.
 
-While the detail view is open, most keys are ignored. Press `q` to close the detail view and return to the table, or `Ctrl+c` to quit at any time.
+While the detail view is open, most keys are ignored. Press `Esc` to close the detail view and return to the table, or `Ctrl+c` to quit at any time.
+
+### Search
+
+With the table focused, press `/` and start typing to filter containers by name. Matching is case-insensitive and fuzzy, so `pgs` matches `postgres`. The query is applied as you type.
+
+Press `Enter` to keep the filter and return to normal navigation, or `Esc` to clear it. After the filter is applied, the second header line shows the active query, match count, and the shortcut to clear it. Compose project headings are kept, and projects with no matches are hidden.
 
 ### Plain-text mode
 
@@ -158,9 +162,10 @@ Each engine snapshot is listed under a `Snapshot of <runtime>:` heading, followe
 | `j` / `k`, `↓` / `↑` | Move selection                                   |
 | `g` / `G`            | Jump to first / last container                   |
 | `Ctrl+u` / `Ctrl+d`  | Page up / down                                   |
+| `/`                  | Search containers by name                        |
+| `Esc`                | Close detail or clear search, otherwise quit     |
 | `r`                  | Refresh lists; retry connecting to down runtimes |
 | Enter                | Open the selected container's detail view        |
-| `q`                  | Close the detail view when open, otherwise quit  |
 | `Ctrl+c`             | Quit                                             |
 
 ### Exit codes
@@ -235,7 +240,7 @@ The release and nix jobs are not supported for local testing.
 | `src/model/`      | Shared data models: containers, resources, runtime, state, health, actions     |
 | `src/runtime/`    | Docker and Podman clients built on [bollard](https://crates.io/crates/bollard) |
 | `src/collector/`  | Per-engine background tasks: snapshots, event streams, stats, reconnects       |
-| `src/app/`        | TUI state: selection, navigation, input handling                               |
+| `src/app/`        | TUI state: selection, navigation, search, input handling                       |
 | `src/ui/`         | [ratatui](https://ratatui.rs) rendering: container table and detail view       |
 | `src/headless.rs` | Plain-text output mode                                                         |
 
